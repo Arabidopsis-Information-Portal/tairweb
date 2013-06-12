@@ -1,0 +1,567 @@
+#!/bin/env perl
+#
+# script that performs searches on protein datasets
+# isoelectric point, molecular weights, targetP localization, interpro domains, membrane spanning domains, etc.
+#
+# Lukas Mueller, February 15, 2002
+#
+# Sue Rhee, October 17, 2003
+# I've modified the script to include SCOP's structural class information.
+
+use strict;
+use CGI;
+use Bio::Seq;
+use Bio::SeqIO;
+use Bio::Index::Fasta;
+
+require "../../format_tairNew.pl";
+
+my $LOCUS_PATTERN='^(AT[1-5mMcC]G\d{5})\.\d+$';
+my %locus_map;
+
+# directory where indexed fasta files are located
+my $datadir = "$ENV{DOCUMENT_ROOT}/../data/protein/";
+my $domainfile = "all.domains.txt";
+my $pIfile = "Isoelectric_Points.txt";
+my $MWfile = "Molecular_Weights.txt";
+#my $membraneprotfile = "Membrane_Proteins.txt";
+my $locationsfile = "TargetP_results";
+my $transmembranefile = "Membrane_Proteins.txt"; #"hmmtop.txt";
+my $swissprotfile = "AGI2uniprot.txt"; #"TIGR2swissprot.txt";
+my $scop_classfile = "SCOP_class.txt";
+my $outputcounter = 0;
+
+# information for linking out
+my $tairlink = "http://$ENV{SERVER_NAME}/servlets/TairObject?type=gene&name=";
+my $prositelink = "http://us.expasy.org/cgi-bin/prosite-search-ac?";
+my $pfamlink = "http://www.sanger.ac.uk/cgi-bin/Pfam/getacc?";
+my $printslink = "http://www.bioinf.man.ac.uk/cgi-bin/dbbrowser/sprint/searchprintss.cgi?display_opts=Prints&category=None&queryform=false&regexpr=off&prints_accn=";
+my $prodomlink = "http://prodes.toulouse.inra.fr/prodom/cgi-bin/ReqProdomII.pl?id_dom1=";
+my $smartlink = "http://smart.embl-heidelberg.de/smart/do_annotation.pl?ACC=";
+my $swissprotlink = "http://www.uniprot.org/entry/"; #"http://us.expasy.org/cgi-bin/niceprot.pl?";
+my $svlink = "http://$ENV{SERVER_NAME}/servlets/sv?type=3&action=search&value=";
+my $tigrlink = "http://www.tigr.org/tigr-scripts/CMR2/hmm_report.spl?acc=";
+my $interprolink = "http://www.ebi.ac.uk/interpro/IEntry?ac=";
+
+
+# variables
+my %domainids;
+my %domainnames;
+my %interproids; # for this hash the key is the domain id and the value the interpro id
+my %pIs;
+my %MWs;
+my %transmembrane;
+my %locations;
+my %swissprotids;
+my %scop_class;
+my @results;     # holds the query result lines to be output
+# version info
+my $version = "1.1-20020901";
+my $error ="";
+
+# get cgi parameters
+#
+my $cgi = CGI -> new ();
+my $lociStr = $cgi -> param("loci");
+my $dataset = $cgi -> param("dataset");
+my $pIlow   = $cgi -> param("pIlow");
+my $pIhigh  = $cgi -> param("pIhigh");
+my $MWlow   = $cgi -> param("MWlow");
+my $MWhigh  = $cgi -> param("MWhigh");
+my $restrictbypI = $cgi -> param("restrictbypI");
+my $restrictbyMW = $cgi -> param("restrictbyMW");
+my $hasdomain = $cgi -> param("hasdomain");
+my $hasthisdomain = $cgi -> param("hasthisdomain");
+my $domainname = $cgi -> param("domainname");
+my $restrictbylocation = $cgi -> param("restrictbylocation");
+my $restrictbytransmembrane = $cgi -> param("restrictbytransmembrane");
+my $transmembrane_count = $cgi -> param("transmembrane_count");
+my $ismembraneprotein = $cgi -> param("ismembraneprotein");
+my $cytoplasm = $cgi -> param("cytoplasm");
+my $chloroplast =$cgi -> param("chloroplast");
+my $mitochondrion = $cgi -> param("mitochondrion");
+my $secreted = $cgi -> param("secreted");
+my $undefined_location = $cgi -> param("undefined_location");
+my $undetermined_location = $cgi -> param("undetermined_location");
+my $proteinbyloci = $cgi -> param("proteinbyloci");
+my $outputtype = $cgi -> param("outputtype");
+my $output_MW = $cgi -> param("output_MW");
+my $output_pI = $cgi -> param("output_pI");
+my $output_locations = $cgi -> param("output_locations");
+my $output_domains = $cgi -> param("output_domains");
+my $output_transmembrane = $cgi -> param("output_transmembrane");
+my $output_swissprotids = $cgi -> param("output_swissprotids");
+my $restrictbyscop_class = $cgi -> param("restrictbyscop_class");
+my $alpha = $cgi -> param("alpha");
+my $beta = $cgi -> param("beta");
+my $alphabeta = $cgi -> param("alphabeta");
+my $alphaandbeta = $cgi -> param("alphaandbeta");
+my $multi_domain = $cgi -> param("multi_domain");
+my $membrane_surface_peptide = $cgi -> param("membrane_surface_peptide");
+my $small_protein = $cgi -> param("small_protein");
+my $output_scop_class = $cgi -> param("output_scop_class");
+# Do some logic: If restrictbylocations is checked but none of the
+# location check boxes are marked, we don't really restrict by
+# location and set restrictbylocation to false, no matter what.
+
+if (!$cytoplasm && !$mitochondrion && !$chloroplast && !$secreted && !$undefined_location && !$undetermined_location) {
+    $restrictbylocation="";
+}
+
+if (!$alpha && !$beta && !$alphabeta && !$alphaandbeta && !$multi_domain && !$membrane_surface_peptide && !$small_protein) {
+    $restrictbyscop_class="";
+}
+
+$error .= "SWISSPROTIDS=$output_swissprotids<BR><BR>";
+
+# are we uploading a file?
+#
+my $uploadStr="";
+my $fh = $cgi->upload("file");
+if ($fh) {
+    while (<$fh>) {
+	$uploadStr .= $_;
+    }
+    $lociStr = $uploadStr;
+}    
+
+# transform the list of loci into an array
+#
+$lociStr = uc($lociStr);     # convert to uppercase
+$lociStr =~ s/\n/\t/g;       # convert newlines to tabs
+$lociStr =~ s/\r/\t/g;       # convert carriage returns to tabs
+$lociStr =~ s/[, ;:]/\t/g;   # convert separators to tabs - be careful not to convert dots
+                             # (can be part of id for multiple alternetaly spliced variants)
+$lociStr =~ tr/\t/\t/s;      # squash multiple tabs into one
+$lociStr =~ s/(AT\dG\d{5})\t/$1\.1\t/g;
+
+
+my @loci = split /\t/, $lociStr;
+if ($proteinbyloci eq "limitproteins"){
+if (! @loci) { output_error("You did not enter any loci information", "Please enter loci accessions (e.g. At1g01030) in the textfield or upload a file with locus information. Thanks!"); exit(); }
+}
+for (my $i=0; $i<@loci; $i++) {
+  if (($loci[$i] =~/AT\dG\d{5}/i) && ($loci[$i] !~/AT\dG\d{5}\.\d+/i)) { 
+	  #$loci[$i] .=".1"; 
+    $error.="\nCorrected $loci[$i]!<BR>"; 
+  } 
+}
+
+$lociStr=join "\t", @loci;
+
+load_data();
+
+output_page();
+
+sub load_data {
+
+    $| = 1;
+    
+    if ($output_domains || $hasdomain || $hasthisdomain) { # load dataset only when necessary
+	$error.= "Loading Domain Data...\n";
+	my ($id, $domainid, $domainname, $interproid);
+	open (F, "<$datadir$domainfile") || die "Can't open $domainfile";
+	my $columnheaders1 = <F>;
+	while (<F>) {
+	    chomp;
+	    my @data = split /\t/;
+	    $data[0]=~s/.*?\#.*?\#(.*)/$1/;
+	    $data[0]=~tr/[a-z]/[A-Z]/;
+	    $id = $data[0];
+	    $domainid = $data[4];
+	    $domainname= $data[5];
+	    $interproid = $data[11];
+	    $domainname.= "($data[6]\-$data[7])";
+	    $domainids{$id} .= "$domainid\t";
+	    $domainnames{$id} .= "$domainname\t";
+	    $interproids{$domainid}="$interproid";
+	}
+	close (F);
+    }
+
+
+    if ($output_swissprotids) {
+	$error.= "Loading SwissProt Data...\n";
+	open (F, "<$datadir$swissprotfile") || die "Can't open $swissprotfile";
+	my $columnheaders1 = <F>;
+	while (<F>) {
+	    chomp;
+		my $line = $_;
+	    	my ($id, $spid) = split /\t/,$line;
+		if($id =~ m/:/)
+		{
+			my @ids = split(/:/,$id);
+			foreach my $idt (@ids)
+			{
+				$idt=~s/(.*?)(\-.*)/$1/;
+	    			$idt=~tr/[a-z]/[A-Z]/;
+	    			$swissprotids{$idt}=$spid;
+			}
+				
+		}
+		else
+		{		
+			$id=~s/(.*?)(\-.*)/$1/;
+	    		$id=~tr/[a-z]/[A-Z]/;
+	    		$swissprotids{$id}=$spid;
+		}
+	}
+	close (F);
+    }
+    
+    if ($restrictbypI || $output_pI) { # load only if necessary!
+	$error .= "Loading pI and MW...\n";
+	
+	open(F, "<$datadir$pIfile") || die "Can't open $pIfile";
+	my $columnheaders2 = <F>; # first line in file are column headers -- throw away
+	while (<F>) {
+	    chomp;
+	    my($id, $pI) = split /\t/;
+	    #$id=~s/.*?\#.*?\#(.*)/$1/;
+	    $id=~tr/[a-z]/[A-Z]/;
+	    #print "$id\n";
+	    $pIs{$id} = $pI;
+	}
+	close (F);
+    }
+
+    
+    # load MW data in any case because we need something to iterate over to generate output
+    $error .= "Loading MW data...\n";
+    open(F, "<$datadir$MWfile") || die "Can't open $MWfile";
+    my $columnheaders3 = <F>; # first line in file are column headers -- throw away
+    while (<F>) {
+	chomp;
+	my($id, $MW) = split /\t/;
+	#$id=~s/.*?\#.*?\#(.*)/$1/;
+	#print STDERR "$id\n";
+	$id=~tr/[a-z]/[A-Z]/;
+	$MWs{$id} = $MW;
+	#assumes $id is a model 
+	my $locus = $id;
+	$locus =~ s/$LOCUS_PATTERN/$1/;
+	push(@{$locus_map{$locus}},$id);
+    }
+    close(F);
+    
+    
+    if ($restrictbylocation || $output_locations) {
+       
+	$error .= "Loading location data...\n";
+	open(F, "<$datadir$locationsfile") || die "Can't open $locationsfile";
+	my $columnheaders4 = <F>; # first line in file are column headers -- throw away
+	while (<F>) {
+	    chomp;
+	    my($id, $loc) = split /\t/;
+	    #$id=~s/.*?\#.*?\#(.*)/$1/;
+	    #print STDERR "$id\n";
+	    $id=~tr/[a-z]/[A-Z]/;
+	    $locations{$id} = $loc;
+	}
+	close(F);
+    }
+
+    if ($restrictbytransmembrane || $ismembraneprotein || $output_transmembrane) {
+	$error .= "Loading transmembrane data...\n";
+	open(F, "<$datadir$transmembranefile") || die "Can't open $transmembranefile";
+        my $columnheaders = <F>; # first line in file are column headers -- throw away
+        while (<F>) {
+            chomp;
+            my($id, $tm) = split /\t/;
+            #$id=~s/.*?\#.*?\#(.*)/$1/;
+            #print STDERR "$id\n";
+            $id=~tr/[a-z]/[A-Z]/;
+            $transmembrane{$id} = $tm;
+        }
+        close(F);
+    }
+
+    if ($restrictbyscop_class || $output_scop_class) {
+	$error .= "Loading SCOP class data...\n";
+	open (F, "<$datadir$scop_classfile") || die "Can't open $scop_classfile";
+	my $columnheaders1 = <F>;
+	while (<F>) {
+	    chomp;
+	    my ($id, $class) = split /\t/;
+#	    $id=~s/(.*?)(\-.*)/$1/;
+#	    $id=~s/(.*?)/$1/;
+	    $id=~tr/[a-z]/[A-Z]/;
+	    #$error .= "$id\n";
+	    $scop_class{$id}=$class;
+	}
+	close (F);
+    }
+}
+sub get_data {
+    $error .= "Search parameters: pIlow: $pIlow, pIhigh: $pIhigh, MWlow: $MWlow, MWhigh: $MWhigh<BR>";
+    $error .= "Has domain: $hasdomain, hasthisdomain: $hasthisdomain, domainname: $domainname, restrictbypI: $restrictbypI, restrictbyMW: $restrictbyMW, SwissProtID: $output_swissprotids\n<BR><BR>";
+    #although VAR name == locus, this is really the model
+    my $locus = "";
+    foreach $locus (keys %MWs) {
+	
+	my ($printthis) ="TRUE"; # set $printthis to true;
+	
+	my @dids = split /\t/, $domainids{$locus};
+	my @dnames = split /\t/, $domainnames{$locus};
+	
+	if ($restrictbypI) {
+	    if (($pIs{$locus}<$pIlow) || ($pIs{$locus}>$pIhigh)) { $printthis =""; }
+	}
+	if ($restrictbyMW) {
+	    if (($MWs{$locus}<$MWlow) || ($MWs{$locus}>$MWhigh)) { $printthis = ""; }
+	}
+	if ($restrictbylocation) {
+	    my $locationprint = "";
+	    if (($chloroplast && ($locations{$locus} eq "C"))) { $locationprint = "TRUE"; }
+	    if (($mitochondrion && ($locations{$locus} eq "M"))) { $locationprint = "TRUE"; }
+	    if (($secreted && ($locations{$locus} eq "S"))) { $locationprint = "TRUE"; }
+	    if (($undefined_location && ($locations{$locus} eq "*"))) { $locationprint = "TRUE"; }
+	    if (($undetermined_location && ($locations{$locus} eq ""))) { $locationprint = "TRUE"; }
+	    if (($cytoplasm && ($locations{$locus} eq "_"))) { $locationprint = "TRUE"; }
+	    if (!$locationprint) { $printthis = ""; }
+	}
+
+	if ($hasdomain) {
+	    if (!@dids) { $printthis = ""; }
+	}
+
+	if ($hasthisdomain) {
+	  my $domainprint="";
+	  my $interproprint="";
+	  $domainname = uc ($domainname);
+	  $domainname =~ s/\s+(.*)\s+/$1/;
+
+	    if (($domainids{$locus} =~ /$domainname/i)) { $domainprint="TRUE";  }
+	    # check if an interpro domain matches
+	    foreach my $d (split/\t/, $domainids{$locus}) {
+	      if ($interproids{$d} eq $domainname) { $interproprint="TRUE"; }
+	    }
+	  if (!$domainprint && (!$interproprint)) { $printthis=""; }
+	}
+
+	#check to see if they entered this locus, by first turning the current model (in $locus)
+	#into a real locus
+	my ($true_locus) = split(/\./,$locus);
+	if ($proteinbyloci eq "limitproteins") {
+	    if (!($lociStr =~ /$true_locus/)) { $printthis=""; }
+	}
+
+	if ($ismembraneprotein) {
+	    if (!($transmembrane{$locus}>0)) { $printthis=""; }
+	}
+
+	if ($restrictbytransmembrane) {
+	    if (!($transmembrane{$locus} == $transmembrane_count)) { $printthis=""; }
+	}
+
+	if ($restrictbyscop_class) {
+	    my $classprint = "";
+	    if (($alpha && ($scop_class{$locus} eq "a"))) { $classprint = "TRUE"; }
+	    if (($beta && ($scop_class{$locus} eq "b"))) { $classprint = "TRUE"; }
+	    if (($alphabeta && ($scop_class{$locus} eq "c"))) { $classprint = "TRUE"; }
+	    if (($alphaandbeta && ($scop_class{$locus} eq "d"))) { $classprint = "TRUE"; }
+	    if (($multi_domain && ($scop_class{$locus} eq "e"))) { $classprint = "TRUE"; }
+	    if (($membrane_surface_peptide && ($scop_class{$locus} eq "f"))) { $classprint = "TRUE"; }
+	    if (($small_protein && ($scop_class{$locus} eq "g"))) { $classprint = "TRUE"; }
+	    if (!$classprint) { $printthis = ""; }
+	}
+	 
+
+	if ($printthis) {
+	    push @results, "$locus\t$swissprotids{$locus}\t$pIs{$locus}\t$MWs{$locus}\t$locations{$locus}\t$transmembrane{$locus}\t$scop_class{$locus}\t$domainids{$locus}$domainnames{$locus}";
+	    
+	    $outputcounter++;
+	}
+    }
+}
+
+sub output_page {
+    
+    get_data();
+    my $matches = scalar(@results);
+    if ($matches>1000) { $outputtype = "text"; } # revert to text if more than a 1000 proteins are output!
+    
+    output_header();
+    
+    foreach my $r (@results) {
+	output_line(split /\t/, $r);
+    }
+    output_footer();
+    
+}
+
+sub output_line {
+    my ($locus, $swissprotid, $pI, $MW, $location, $tm, $class, @rest) = @_;
+    my @did;
+    my @dname;
+
+    for (my $i=0; ($i< (scalar(@rest)/2)); $i++) {
+	push @did, $rest[$i];
+	push @dname, $rest[$i+(@rest/2)];
+    }
+#Trying to print more explicit descriptions than what's in the SCOP file.
+    if ($class eq "a"){
+	$class = "all alpha";
+    }
+    if ($class eq "a"){
+        $class = "all alpha";
+    }
+    if ($class eq "b"){
+        $class = "all beta";
+    }
+    if ($class eq "c"){
+        $class = "interspersed alpha/beta";
+    }
+    if ($class eq "d"){
+        $class = "segregated alpha/beta";
+    }
+    if ($class eq "e"){
+        $class = "multi-domain";
+    }
+    if ($class eq "f"){
+        $class = "membrane, surface or peptide";
+    }
+    if ($class eq "g"){
+        $class = "small";
+    }
+    if ($location eq "C"){
+	$location = "chloroplast"
+	}
+    if ($location eq "M"){
+        $location = "mitochondrion"
+        }
+    if ($location eq "_"){
+        $location = "other (e.g. cytoplasm)"
+        }
+    if ($location eq "S"){
+        $location = "secreted"
+        }
+    if ($location eq "*"){
+        $location = "undefined"
+        }
+    if ($location eq ""){
+        $location = "undetermined"
+        }
+
+    if ($outputtype eq "html") {
+	my $bgcolor = "ededed";
+	if ($outputcounter % 2) { $bgcolor ="E0e0e0"; }
+	my $linklocus=$locus;
+	#if ($locus =~ /(AT\dG\d{5})\.\d+/i) { $linklocus = $1; }
+	print "<TR valign=top bgcolor=$bgcolor><TD><a href=$tairlink$linklocus target=_new>$linklocus</a></TD>";
+	print "<TD><a href=/cgi-bin/bulk/sequences/getseq.pl?loci=$linklocus&dataset=ATH1_pep target=_new>sequence</a>"
+	    ." <a href=$svlink$linklocus target=_new>SV</a></TD>\n";
+	if ($output_swissprotids) { 
+	    if ($swissprotid ne "NULL") { print "<TD><a href=$swissprotlink$swissprotid target=_new>$swissprotid</a></TD>"; }
+	    else { print "<TD>&nbsp;</TD>"; }
+	}
+	if ($output_MW) { print "<TD>$MW</TD>";}
+	if ($output_pI) { print "<TD>$pI</TD>"; }
+	if ($output_locations) { print "<TD>$location&nbsp;</TD>"; }
+	if ($output_transmembrane) { print "<TD>$tm</TD>"; }
+	if ($output_scop_class){print"<TD>$class</TD>";}
+	if ($output_domains) { 
+	    print "<TD>";
+	    for (my $i=0; $i<scalar(@did); $i++) {
+		my $link=$did[$i];
+		if ($did[$i]=~/^PS0/) { $link="<a href=$prositelink$did[$i] target=_new>$did[$i]</a>"; }
+		elsif ($did[$i]=~/^PF/)  { $link="<a href=$pfamlink$did[$i] target=_new>$did[$i]</a>";    }
+		elsif ($did[$i]=~/^SM/)  { $link="<a href=$smartlink$did[$i] target=_new>$did[$i]</a>";   }
+		elsif ($did[$i]=~/^PD/)  { $link="<a href=$prodomlink$did[$i] target=_new>$did[$i]</a>";  }
+		elsif ($did[$i]=~/^PR/) {  $link="<a href=$printslink$did[$i] target=_new>$did[$i]</a>";  }
+		elsif ($did[$i]=~/^TI/) { $link="<a href=$tigrlink$did[$i] target=_new>$did[$i]</a>"; }
+		
+		if(defined($interproids{$did[$i]}) && $interproids{$did[$i]} !~ /NULL/)
+		{
+			print "<a href=$interprolink$interproids{$did[$i]} target=_new>$interproids{$did[$i]}</a> $link &nbsp;$dname[$i]<BR>";
+		}
+		else
+		{
+			#print "$link &nbsp;$dname[$i]<BR>";
+			print "$dname[$i]<BR>";
+		}
+			
+	    }
+	    print "</TD>\n";
+	}
+	print "</TR>\n";
+    }
+    else {
+	print "$locus\t";
+	if ($output_swissprotids) { print "$swissprotid\t"; }
+	if ($output_MW) { print "$MW\t"; }
+	if ($output_pI) { print "$pI\t"; }
+	if ($output_locations) { print "$location\t"; }
+	if ($output_transmembrane) { print "$tm\t"; }
+	if ($output_scop_class) {print "$class\t";}
+	if ($output_domains) { 
+	    for (my $i=0; $i<scalar(@did); $i++) {
+		print "$did[$i]\t$dname[$i]\t";
+	    }
+	}
+	print "\n";
+    }
+}
+
+sub output_header() {
+
+    if ($outputtype eq "html") {
+	print "Content-type: text/html\n\n";
+	tair_header("TAIR Protein Search Results");
+	#print "<TABLE bgcolor=eoeobb><TR><TD>Debugging Info:<BR>$error</TD></TR></TABLE>";
+	print "<CENTER><TABLE width=600><TR><TD>".scalar(@results)." proteins matched your query.\n<BR></TD></TR></TABLE>\n";
+	print "<TABLE width=600>";
+	print "<TR bgcolor=c0c0c0><TD><B>Gene</B></TD>";
+	print "<TD><B>Protein<BR>SeqViewer</B></TD>";
+       	if ($output_swissprotids) { print "<TD><B>SwissProt ID</B></TD>"; }
+	if ($output_MW) { print "<TD><B>MW [Da]</B></TD>";}
+	if ($output_pI) { print "<TD><B>pI</b></TD>"; }
+	if ($output_locations) { print "<TD><B>Location</B></TD>"; }
+	if ($output_transmembrane) { print "<TD><B>TM Domains</B></TD>"; }
+	if ($output_scop_class) {print "<TD><B>Structural Class</B></TD>"; }
+	if ($output_domains) { print "<TD><B>Domains</B></TD>"; }
+	print "</TR>\n";
+    }
+    else { 
+	print "Content-type: text/plain\n\n"; 
+	print "$outputcounter proteins matched your query request.\n\n";
+	print "Locus\t";
+        if ($output_swissprotids) { print "swissprot_id\t"; }
+	if ($output_MW) { print "MW\t"; }
+	if ($output_pI) { print "pI\t"; }
+	if ($output_locations) { print "Location\t"; }
+	if ($output_transmembrane) { print "TM Domains\t"; }
+	if ($output_scop_class) {print "Structural Class\t"; }
+	if ($output_domains) { print "Domains"; }
+	print "\n";
+    }
+}
+
+sub output_footer() {
+    if ($outputtype eq "html") {
+	print "</TABLE><BR>\n";
+	tair_footer();
+    }
+#    else {
+#	print "Done. $outputcounter proteins matched your query request.\n";
+#    }
+}
+
+sub output_error {
+    my $title = shift;
+    my $message = shift;
+    print "Content-type: text/html\n\n";
+    print "<HTML><HEAD>";
+
+    tair_header("Proteins");
+
+    print "<center>\n";
+
+    print "<TABLE border=0 width=602>\n";
+    print "<TR><TD><span class=header>Error: $title</span><br><br>\n";
+    print "$message<BR><BR><BR><BR>\n";
+    print "<a href=\"/go/search/\">GO Search Page</a><BR><BR><BR>";
+    print "</TABLE>\n";
+
+    tair_footer();
+}

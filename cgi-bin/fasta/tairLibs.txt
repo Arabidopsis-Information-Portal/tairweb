@@ -1,0 +1,24 @@
+AGI Transcripts (- introns, + UTRs) (DNA)$1A/home/arabidopsis/data/FASTA/At_transcripts 0
+AGI Genes (+ introns, + UTRs) (DNA)$1B/home/arabidopsis/data/FASTA/ATH1_seq 0
+AGI CDS (- introns, - UTRs) (DNA)$1C/home/arabidopsis/data/FASTA/ATH1_cds 0
+AGI Proteins (Protein)$0D/home/arabidopsis/data/FASTA/ATH1_pep
+AGI whole genome (BAC clones) (DNA)$1E/home/arabidopsis/data/FASTA/ATH1_bacs_con 0
+GenBank whole genome (BAC clones) (DNA)$1F/home/arabidopsis/data/FASTA/AGI_BAC 0
+GenBank, including ESTs & BAC ends (DNA)$1G/home/arabidopsis/data/FASTA/ArabidopsisN 0
+GenBank, minus ESTs & BAC ends (DNA)$1H/home/arabidopsis/data/FASTA/AtANNOT 0
+Uniprot Plant Proteins (Protein)$0I/home/arabidopsis/data/FASTA/uniprot 0
+New GenBank (DNA)$1J/home/arabidopsis/data/FASTA/recent_at 0
+GenBank and Kazusa BAC Ends(DNA)$1K/home/arabidopsis/data/FASTA/AtBACEND 0
+GenBank ESTs (DNA)$1L/home/arabidopsis/data/FASTA/AtEST 0
+Insertion Flank Sequences (DNA)$1M/home/arabidopsis/data/FASTA/TDNA 0
+Loci Upstream Sequences 500 bp (DNA)$1N/home/arabidopsis/data/FASTA/At_upstream_500 0
+Loci Upstream Sequences 1000 bp (DNA)$1O/home/arabidopsis/data/FASTA/At_upstream_1000 0
+Loci Upstream Sequences 3000 bp (DNA)$1P/home/arabidopsis/data/FASTA/At_upstream_3000 0
+Loci Downstream Sequences 1000 bp (DNA)$1Q/home/arabidopsis/data/FASTA/At_downstream_1000 0
+Loci Downstream Sequences 3000 bp (DNA)$1R/home/arabidopsis/data/FASTA/At_downstream_3000 0
+Intron (DNA)$1S/home/arabidopsis/data/FASTA/At_intron 0
+Intergenic (DNA)$1T/home/arabidopsis/data/FASTA/At_intergenic 0
+Brassica (DNA)$1U/home/arabidopsis/data/FASTA/brassica 0
+GenBank Plant Proteins (Protein)$0V/home/arabidopsis/data/FASTA/PlantProtein 0
+AGI 3' UTRs (DNA)$1X/home/arabidopsis/data/FASTA/ATH1_3_UTR 0
+AGI 5' UTRs (DNA)$1Y/home/arabidopsis/data/FASTA/ATH1_5_UTR 0

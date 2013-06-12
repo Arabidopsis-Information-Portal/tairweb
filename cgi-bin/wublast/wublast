@@ -1,0 +1,1207 @@
+#!/bin/env perl
+
+#
+# From:
+# Carlos A. Pero (cpero@ncsa.uiuc.edu)          last update  4/30/95
+# WebMonitor Standalone Module: mail
+#
+# Amos Bairoch (bairoch@expasy.hcuge.ch)
+# blastncbi form
+#
+# Modified from May 1995 to June 1999 for AtDB and SGD
+# Mike Cherry (cherry@genome.stanford.edu)
+#
+## July 1999
+# modified by Christian Rees (rees@genome.stanford.edu)
+# changed all HTML output to CGI.pm commands
+#
+# July 1999
+# almost complete conversion to CGI.pm and changed layout
+#  to use tables.  Added email reply, and load file options.
+# Mike Cherry (cherry@genome.stanford.edu)
+#
+# November 2000-January 2001
+# Edited by Bengt Anell to work with TAIR datasets on Linux 
+# and with new graphics (JCES-BLASTGRAPHIC).
+# bengt@acoma.stanford.edu
+#
+# January 2002
+# Modified by Yihe Wu. For used in tair web site. 
+
+# March-April 2002
+# Modified by Guanghong Chen. Use blast2html.pl and HtmlMap.pl as a library instead
+# of a system call. 
+
+#use strict;  #if use strict, the file transfer will have some problem
+
+use CGI qw/:standard :html -nph/;
+
+use Bio::Seq;
+use Bio::SeqIO;
+use Bio::Index::Fasta;
+
+use lib '../bulk/sequences/';
+use LociSeqFetch;
+
+use lib "../cluster";
+use RemoteCluster;
+
+use strict 'vars';
+
+require '../format_tairNew.pl';
+require '../untaint.pl';
+require 'blast2html.pl';
+require 'HtmlMap.pl';
+
+# Subroutine prototypes.
+
+sub printBlast($);
+sub note2log($);
+sub error2log($);
+sub isSequenceDNA($$); 
+sub validateSequence($$);
+sub myTairHeader();
+sub myTairFooter();
+sub checkLoad();
+sub printNewForm();
+sub printEmailMessage();
+sub printSeq($$);
+sub printError(); 
+sub printQueryError();
+sub printSError(); 
+sub printXError(); 
+sub printMailError(); 
+sub HTMLerror($);
+
+my $HOME = $ENV{'DOCUMENT_ROOT'} . "/..";
+my $TMPDIR = "$HOME/tmp/wublast";
+my $OUTFILE = "blastout.tmp.$$";
+my $MAILPROG = "/usr/bin/mailx";
+my $HTTPROOT = "http://" . $ENV{'HTTP_HOST'}; # http://arabidopsis.org;
+my $NCBI_HELP = "http://www.ncbi.nlm.nih.gov/BLAST/blast_help.html";
+my $CONTACT = "$HTTPROOT/contact";
+my $SEQBATCHTMP =  "$TMPDIR/blastseq.batch.$$";
+my $BLASTLOG = "$HOME/logs/wublast/wublast.log";
+my $ERRORLOG = "$HOME/logs/wublast/error.log";
+my $BLASTPAGE = "/wublast/index2.jsp";
+my $COLUMN_WIDTH = 70;
+my $SCRIPT = "$ENV{'SCRIPT_NAME'}";
+my $MAXLOAD = 6.0;
+my $MAX_SEQ_NUMBER = 5;
+my $DATABASE_FILE = "$HOME/data/FASTA/fastaMetaData";
+
+$| = 1;    # to prevent buffering problems
+
+my ( $debug ) = 1;
+#my ( $debug ) = 0;
+
+my ( $isMSIE ) = 0;
+
+## determine if user is using IE or Safari -
+## disable server push if so
+my ( $http_user_agent ) = $ENV{'HTTP_USER_AGENT'};
+if ( $http_user_agent =~ /MSIE/ || $http_user_agent =~ /Safari/ )
+{ 
+    $isMSIE = 1; 
+}
+
+my ( $id, $trans, $sequence, @sequence, $outputTitle, $seqname, $seqlen ); 
+my ( $program, $queryType, $numQuerySeqs, @seqdesc, @seqDescr ); 
+my ( $command, $command_email, $sthr, $ethr );
+my ( $sortop, $showal, $matrix, $filtop, $output, $cutoff, $filtering );
+my ( $truncatedseq, $email, $username, $hostname, $sendhtml );
+my ( $filename, $options, $hspmax, $gapmax );
+my ( $min, $sec,  $hour, $mday, $mon, $year, $wday, $yday, $isdst, $thetime );
+my ( $queuewait, $loadwait, $waitfirst, $loadfirst, $logtext, $line, $load );
+
+my @ntDbNames = ();
+my @aaDbNames = ();
+
+
+my $defaultDb = 'At_GB_genomic';
+my $database = "At_GB_genomic";
+my %dbLabels = ( );
+
+
+open( DATABASES, $DATABASE_FILE ) 
+    or die( "Error! $0 could not open $DATABASE_FILE." );
+
+<DATABASES>; #dump first line, should be: Name    Type    NumSeqs Residues        Date    Description
+
+
+while ( <DATABASES> ) {
+
+    chomp();
+    my $line = $_;
+    my ($name, $type, $num_seqs, $residues, $date, $desc) = split /\t/, $line;
+
+    if ($name) {
+	if ($type eq 'AA') { 
+	    $type = "Protein";
+	    push (@aaDbNames, $name);
+	} elsif ($type eq 'DNA') {
+	    push (@ntDbNames, $name);
+	}
+
+	my $display = "$desc ($type)";
+	$dbLabels{$name} = $display;
+    }
+}
+
+close( DATABASES );
+
+
+my @dbNames = ( @ntDbNames, @aaDbNames );
+#my $defaultDb = 'ArabidopsisN';
+#my $database = "ArabidopsisN";
+
+
+
+# define names and labels for the possible programs, used in print_form()
+
+my @prgNames = qw/blastn blastp blastx tblastx tblastn/;
+my %prgLabels = 
+  ( 'blastn'=> 'BLASTN  : nucleotide query to nucleotide db',       
+    'blastp'=> 'BLASTP  : protein query to protein db',
+    'blastx'=> 'BLASTX  : translated (6 frames) nucl. query to protein db',
+    'tblastx'=>'TBLASTX : transl. (6 frames) nucl. query to transl (6) nt db',
+    'tblastn'=>'TBLASTN : protein query to translated (6 frames) nt db'
+  );
+
+# Output input form unless you are receiving parameters
+
+printNewForm() unless param;
+
+# Do standard HTTP stuff #
+$database = untaint( param( 'database' ) );
+
+if ( $database eq '' ) 
+{ 
+    #$database = "ArabidopsisN"; 
+    $database = "At_GB_genomic_DNA"; 
+}
+
+# Set defaults
+
+$sthr = "default";
+$ethr = "default";
+$sortop = "pvalue";
+$showal = "100";
+$matrix = "BLOSUM62";
+$filtop = "default";
+$output = "gapped";
+$filtering = 0;
+$truncatedseq = 0;
+
+# Read values from Form
+
+my ( $locusName, @loci );
+my $submitSeq=1; ## if submit locus name, $submitSeq = 0
+
+my $textbox = param( 'textbox' );
+
+if ( $textbox eq 'seq' ) 
+{ 
+    $sequence = param( 'QueryText' ); 
+}
+else 
+{
+    $submitSeq=0;
+    $locusName = param( 'QueryText' );
+}
+
+$outputTitle = param( 'seqname' );
+$program = "blastn";
+$program = untaint( param( 'program' ) );
+$program =~ s/ .*//;
+if ( $program eq '' ) 
+{
+    $program = "blastn"; 
+}
+$filtop = untaint( param( 'filtop' ) );  # -filter "default"
+$filtop =~ s/seg-xnu/seg+xnu/;
+$sortop = untaint( param( 'sortop' ) );  # -sort_by_pvalue
+$ethr   = untaint( param( 'ethr' ) );    # E "default"
+$sthr   = untaint( param( 'sthr' ) );    # S "default"
+$showal = untaint( param( 'showal' ) );  # B & V "100"
+$matrix = untaint( param( 'matrix' ) );  # -matrix "BLOSUM62"
+$output = untaint( param( 'output' ) );  # -gap
+$email  = param( 'email' );
+
+$filename = param( 'filename' );
+
+#  check if a sequence was provided
+
+if ( $submitSeq ) 
+{
+    if ( !$filename && !$sequence )
+    {
+        HTMLerror( "No sequence provided. Please return to the form and " .
+                   "enter a sequence." ),
+    }
+}
+
+#  check if loci names were provided
+
+else 
+{
+    if ( !$filename && !$locusName ) 
+    {
+        HTMLerror( "No loci names provided. Please return to the form " .
+                   "and enter loci names." );
+    }
+}
+
+# Are sequences or loci names provided by file
+
+if ( $filename ) 
+{
+    if ( $submitSeq ) 
+    {
+        $sequence = "";
+        while ( <$filename> ) 
+        {
+            tr/\r/\n/;
+            $sequence .= $_;
+        }
+    }
+    else 
+    {
+        $locusName = "";
+        while ( <$filename> ) 
+        {
+            tr/\r/\n/;
+            $locusName = $_;
+        }
+    }
+}
+
+my $no_seq_found;
+
+# get sequence according to locus name
+
+
+if ( !$submitSeq )
+{ 
+    
+    my $dataset = "ATH1_cds";
+    
+    if ($program eq "blastp" || $program eq "tblastn"){
+        $dataset = "ATH1_pep";
+    }
+
+    # directory where indexed fasta files are located
+
+    my $datadir = $HOME ."/data/sequences/";
+    my $indexfiledir = $HOME ."/data/sequences/";
+    my $datasetpath = $datadir.$dataset;
+    my $indexfile   = $indexfiledir.$dataset;
+    
+    my %args = ( 'index_file' => $indexfile );
+
+    eval 
+    {
+        my $fetcher = LociSeqFetch->new( %args );
+
+        # 1, means need to add .1 to the end of locus name if there is no .1 extension
+
+        ( $sequence, $no_seq_found ) = 
+             $fetcher->fetch_loci_sequences( $locusName, 1 );
+    };
+
+    if ( $@ )
+    {
+        HTMLerror( $@ );
+    }
+
+    if ( !$sequence ) 
+    {
+        my $errorMessage = "The following loci have no sequences found:<UL>\n";
+
+        foreach my $noseq ( @$no_seq_found )
+        {
+            $errorMessage .= "<LI>$noseq\n";
+        }
+
+        $errorMessage .= "</UL>\n";
+        
+        HTMLerror( $errorMessage );
+    }
+}
+
+# if seqence contains '..' assume its GCG form
+# discard everything before the .. and the .. too
+
+if ( $sequence =~ /(.*)\.\.(.*)/ ) 
+{
+    $sequence = $2;
+    if ( $debug ) 
+    {
+        print "<br>GCG format<br>$sequence<br>$2<br>$1<br>";
+    }
+}
+
+
+# Process Input Sequence
+
+@sequence = ();
+@seqDescr = ();
+$seqlen = 0;
+
+$sequence =~ s/^\s+//;#Trim leading white space
+$sequence =~  s/\s+$//; #Trim trailing whitespace
+
+if ( $sequence !~ /^>/ ) 
+{
+    $sequence = ">user-submitted sequence\n" . $sequence;
+}
+
+# save sequence text w/out headers for easy validation below
+
+my $validateSeq;
+
+# Check if multiple sequences, clean up
+
+while ( $sequence =~ /^(>.*)\n/m )  # has fasta header
+{ 
+    $sequence = $'; # part after first line is sequence
+    push( @seqDescr, $1 );
+    $sequence =~ /([^>]*)/m;
+    my $tmpseq = $1;
+    $tmpseq =~ s/\W//gm;
+    $seqlen += length( $tmpseq );
+    push( @sequence, $tmpseq );
+    $validateSeq .= $tmpseq;
+}
+
+# Check if the number of sequences submitted exced the allowed limit..
+
+$numQuerySeqs = scalar( @seqDescr );
+
+if ( $numQuerySeqs > $MAX_SEQ_NUMBER ) 
+{
+    HTMLerror( "The number of your query sequences is larger than the " .
+               "maximum limit $MAX_SEQ_NUMBER. Please use less sequences " .
+               "to do the query." );
+}
+
+## validate sequence type in 2 stages -- first make a best guess as
+## to which type of sequence (AA|NT) was submitted based on sequence
+## text and chosen algorithm
+
+$queryType = isSequenceDNA( $validateSeq, $program ) ? "DNA" : "AA";
+
+## next validate sequence text based on algorithm to try to determine if
+## an invalid sequence was submitted - if so, print HTML error & bail out now
+#if ( my $errMsg = validateSequence( $validateSeq, $program ) ) {
+
+if ( my $errMsg = validateSequence( $validateSeq, $program ) ) 
+{
+    HTMLerror( "$errMsg<br>sequence: $sequence<br>Query= $queryType<br>" );
+}
+
+$sequence = "";
+
+# now reconstitute sequence
+
+while ( @seqDescr ) 
+{
+    $sequence .= shift @seqDescr;
+    $sequence .= "\n";
+    $sequence .= shift @sequence;
+    $sequence .= "\n";
+}
+
+
+if ( !$numQuerySeqs or !$seqlen ) 
+{
+    HTMLerror( "No sequence could be found in your submission." );
+}
+
+#
+# Initialize $options
+#
+
+if ( $ethr eq "" ) 
+{ 
+    $ethr = "default"; 
+}
+if ( $sthr eq "" ) 
+{ 
+    $sthr = "default"; 
+}
+if ( $sortop eq "" ) 
+{ 
+    $sortop = "pvalue"; 
+}
+if ( $showal eq "" ) 
+{ 
+    $showal = "100"; 
+}
+if ( $matrix eq "" ) 
+{ 
+    $matrix = "BLOSUM2"; 
+}
+if ( $filtop eq "" ) 
+{ 
+    $filtop = "default"; 
+}
+if ( $output eq "" ) 
+{ 
+    $output = "gapped"; 
+}
+
+if ( $seqlen < 10000 ) 
+{
+    if ( $program eq "blastn" ) 
+    {
+	$hspmax = 6000;
+	$gapmax = 3000;
+    } 
+    else 
+    {
+	$hspmax = 2000;
+	$gapmax = 1000;
+    }
+} 
+else 
+{
+    $hspmax = 10000;
+    if ( $program eq "blastn" ) 
+    {
+	$gapmax = 3000;
+    } 
+    else 
+    {
+	$gapmax = 1000;
+    }
+}
+
+# Build $options
+
+$options = " -hspsepsmax=" . $hspmax . " -hspsepqmax=" . $hspmax . 
+    " -gapsepsmax=" . $gapmax . " -gapsepqmax=" . $gapmax . " ";
+
+if ( $sthr ne "default" ) 
+{
+    if ( $sthr + 0 < 60 && $seqlen > 100 ) 
+    { 
+        printSError();
+    }
+}
+if ( $sortop ne "pvalue" ) 
+{ 
+    $options .= " -sort_by_$sortop"; 
+}
+if ( $ethr ne "default" )  
+{ 
+    $options .= " E=$ethr" 
+};
+if ( $sthr ne "default" )  
+{ 
+    $options .= " S=$sthr" 
+};
+if ( $showal ne '' ) 
+{ 
+    $options .= " B=$showal V=$showal"; 
+}
+if ( $output ne 'gapped' ) 
+{ 
+    $options .= " -nogap"; 
+}
+if ( $program ne "blastn" && $matrix ne "BLOSUM62" ) 
+{ 
+    $options .= " -matrix=$matrix"; 
+}
+
+
+if ( $filtop ne "none" ) 
+{
+    $filtering = 1;
+    if ( $filtop eq "default" ) 
+    {
+	if ( $program ne "blastn" )
+        {
+	    $options .= " -filter=seg";
+	} 
+        else 
+        {
+	    $options .= " -filter=dust";
+	}
+    } 
+    else 
+    {
+	$options .= " -filter=$filtop";
+    }
+} 
+else 
+{
+    $filtering = 0;
+}
+
+# Check to se if database choice is compatible with BLAST programme
+#print "$database\n";
+
+if ( grep {/$database/} @ntDbNames ) 
+{
+    # for NT databases, only blastn, tblastn, tblastx allowed
+
+    if ( $queryType ne "DNA" and $program ne "tblastn" ) 
+    { 
+        printQueryError();
+    }
+    if ( $queryType eq "DNA" and $program eq "tblastn" ) 
+    { 
+        printQueryError();
+    }
+    if ( $program eq "blastp" || $program eq "blastx" ) 
+    { 
+        printError();
+    }
+}
+
+elsif ( grep {/$database/} @aaDbNames ) 
+{
+    # for AA databases, only blastx and blastx allowed
+    if ( $queryType ne "AA" and $program ne "blastx" ) 
+    { 
+        printQueryError();}
+    if ( $program ne "blastp" && $program ne "blastx" ) 
+    {
+        printError();
+    }
+}
+
+#see for more information: http://wp.netscape.com/assist/net_sites/pushpull.html
+
+if ( !$isMSIE ) 
+{
+    print( "Content-type: multipart/x-mixed-replace;boundary=" .
+           "--RefreshBoundary\n\n" );
+    print( "--RefreshBoundary\n" );
+    print( PrintHeader() );
+    print( "<HTML><HEAD><TITLE>TAIR WUBLAST Job Pending</TITLE></HEAD><BODY " .
+           "BGCOLOR=#FFFFFF>" );
+
+    # needs to be here to come before gif-output image from map.pl
+    #### Print message to user to have patience & not resubmit job ###
+
+    print( << "print_tag" );
+<BR>
+<BR>
+<P>Your Blast request has been queued and will be processed. <FONT COLOR = red>Please <b>do not</b>
+hit "Stop" and resubmit your job</FONT>.  Such action will add to the queue of
+jobs already in progress and have the effect of placing your request to
+the end of the line.</P>
+<P><CENTER><IMG SRC=/images/coffeecup.gif width=45 height=52></CENTER></P>
+print_tag
+
+}
+
+
+## log for debugging #######
+
+my $startTime = time; # see how long it takes in seconds
+my $remoteIP = $ENV{'REMOTE_ADDR'};
+( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst ) = 
+    localtime( $startTime );
+$thetime = sprintf( "%2d/%2d/%2d:%2d:%2d:%2d", $mday, $mon+1, $year + 1900, 
+                    $hour, $min, $sec );
+$thetime =~ s/ /0/g;
+
+note2log( "$thetime|$remoteIP|$program|$database|$options|$queryType|$email\n\t$sequence" );
+
+
+eval 
+{
+    # Create RemoteCluster instance to handle communication
+    # with Analysis Farm
+    my $server = RemoteCluster->new();
+
+    my $priority = 1;
+    if ( $program eq "tblastx" ||
+         $program eq "tblastn" ||
+         $database eq "PlantDNA" )
+    {
+        $priority = 0;
+    }
+    
+    # create command string to execute on remote server
+    my $command = "\$WUBIN/$program \$WUREF/$database - $options -gi -cpus=1";
+
+    if($database eq "PlantProtein")
+    {
+	$command .= " -gi";
+    }
+
+    note2log($command . "\n");
+    # Create hash of options to pass to RemoteCluster.  Query
+    # sequence must be submitted to remote job as STDIN.
+    my %args = ( 'command' => $command,
+		 'priority' => $priority,
+		 'stdin', $sequence );
+
+    # submit job and get initial response
+    my ( $response ) = $server->Submit( %args );
+
+    $response = "Running";
+
+    while ( $response =~ "PleaseRun" || $response =~ "Running" ) 
+    {
+        $response = $server->Status();
+        if ( !$isMSIE ) 
+        {
+            print ">>>  $response<br>";
+        }
+        sleep 1;
+    }
+
+    my ( $my_result ) = $server->Retrieve();
+
+    $my_result = filterDBName ($my_result);
+
+    $server->CleanUp( 
+                    );
+
+    open( RESULT, ">$TMPDIR/$OUTFILE" )
+        or die( "Can't create output file $TMPDIR/$OUTFILE: $!" );
+
+    print RESULT $my_result;
+	print RESULT "COMMAND: $command\n";    
+
+    close ( RESULT );
+};
+
+if ( $@ ) 
+{
+    error2log( "$thetime: $@" );
+    HTMLerror( "$thetime: $@ <BR>Please send email to " .
+               "informatics\@arabidopsis.org to inform this error." );
+}
+
+if ( !$isMSIE ) 
+{
+    print "\n--RefreshBoundary\n";
+}
+
+print( PrintHeader() );
+myTairHeader();
+print( "<table width=\"700\" border=\"0\"><tr><td>" );
+
+#in case some loci has found no sequences, notify user.my $errorMessage;
+
+if ( scalar( @$no_seq_found ) > 0 ) 
+{
+    my $errorMessage = "<FONT color=red>The following loci have no sequences " .
+        "found:</FONT><UL>\n";
+
+    foreach my $noseq ( @$no_seq_found ) 
+    {
+        $errorMessage .= "<LI>$noseq\n";
+    }
+
+    $errorMessage .= "</UL>\n";
+
+    print( "$errorMessage\n" );
+}
+
+print "<H1>$program results for $numQuerySeqs ";
+
+if ( $numQuerySeqs ==1 ) 
+{
+    print( "sequence " );
+} 
+else 
+{
+    print( "sequences" );
+}
+
+print( " searched against: $dbLabels{$database} <A HREF = \"$BLASTPAGE\"" .
+       ">New search</A><BR>" );
+if ( $outputTitle ) 
+{
+    print( "Title: $outputTitle<BR>>" );
+}
+
+print( " </H1><hr></td></tr></table>" );
+
+#Check if results will be returned by email -> call mail program
+
+if ( $email ne "" ) 
+{
+    $command_email = "$MAILPROG";
+    $command_email .= "  < $TMPDIR/$OUTFILE " ;
+    $command_email .= " -s"." \"WUBLAST results: $outputTitle id:$$\" ";
+    #$command_email .= " -r no-reply\@arabidopsis.org ";
+    $command_email .= " -r curator\@arabidopsis.org ";
+    $command_email .= " $email";
+    
+    system ( $command_email ) 
+        && die "error email return $program $database $TMPDIR/$OUTFILE";
+
+    printEmailMessage();
+}
+
+#If results to browser -> call HtmlMap.pl and blast2html.pl and with path to blast output
+
+else 
+{
+    if ( $numQuerySeqs == 1 ) 
+    {
+        # function from library HtmlMap
+        eval 
+        {
+            generate_html_map_output( "$TMPDIR/$OUTFILE", 1 );
+        }; 
+
+        if ( $@ ) 
+        {
+            if ( $@ =~ /MSG:( *.*)\n/ ) 
+            {
+                print( "<P><FONT COLOR = RED>$1</FONT></P>" );
+            }
+            else 
+            {
+                $@ =~ s/\n/<BR>/g;
+                print( $@ );
+            }
+        }
+}
+
+    # convert( "$TMPDIR/$OUTFILE",  $errorMessage );
+
+    printBlast( $database );
+}
+
+myTairFooter();
+
+my $seconds = time - $startTime;
+note2log( "Done, elapsed time = $seconds" );
+#unlink "$TMPDIR/$OUTFILE";
+
+exit;
+
+#####################################################################################################
+# subroutines below
+#####################################################################################################
+
+# convert results file into HTML for display using
+# blast2html.pl lib.  Pass dataset name to help 
+# with dataset specific parsing rules
+
+sub printBlast($)
+{
+    my $database = shift;
+    convert( "$TMPDIR/$OUTFILE", $database );
+}
+
+###########################################
+# Make note in blast log, use for debugging
+###########################################
+
+sub note2log($)
+{
+    my $text = shift;
+    open( LOG, ">>$BLASTLOG" ) or warn "could not open $BLASTLOG\n";
+    print( LOG "$$: $text\n" );
+    close( LOG );
+}
+
+sub error2log($)
+{
+    my $text = shift;
+    open( LOG, ">>$ERRORLOG" ) or warn "could not open $ERRORLOG\n";
+    print( LOG "$$: $text\n" );
+    close( LOG );
+}
+
+
+##############################################
+# Perform a simple test of whether sequence is DNA or Protein
+# This test could be mislead, but it should work most of the time
+##############################################
+
+sub isSequenceDNA($$) 
+{
+    my $seq = shift;
+    my $algorithm = shift;
+    my $isDNA = 0;
+
+    ##### Validation rules from Eva ######
+    #
+    # Use user's choice of algorithm to infer what type [AA|NT] of sequence is 
+    # allowed to be submitted, then make sure there are no chars in sequence
+    # that suggest that opposite type has been submitted
+    #
+    # User says it's protein (meaning blastp or tblastn are chosen)
+    #    If sequence has U and does not have EFILPQXZ
+    #       it is nucleotide
+    #    If sequence has only ACGTN
+    #       it is nucleotide
+    #      (this could in theory be a valid protein, but probably does not exist in
+    #       real life - this should catch most of the user errors in choosing the
+    #      wrong blast program)
+    #    Else 
+    #       accept it as protein
+    #
+    # User says it's nucleotide (meaning blastn, blastx or tblastx)
+    #    If sequence has EFILPQXZ and does not have U
+    #       it is protein
+    #    Else 
+    #       accept it as nucleotide
+    #######
+
+    if ( $algorithm eq "blastp" || $algorithm eq "tblastn" ) 
+    {
+        if ( $seq =~/Uu/ && !( $seq =~ /[EFILPQXZefilpqxz]/ ) ) 
+        {
+            $isDNA = 1;
+        } 
+        elsif ( ! ( $seq =~ /[^ACGTNacgtn]/ ) ) 
+        {
+            $isDNA = 1;
+        }
+    
+    } 
+    elsif ( $algorithm eq "blastn" || 
+            $algorithm eq "blastx" || 
+            $algorithm eq "tblastx" ) 
+    {
+        if ( !( $seq =~ /[Uu]/ ) && $seq =~ /[EFILPQXZefilpqxz]/ ) 
+        {
+            $isDNA = 0;
+        } 
+        else 
+        {
+            $isDNA = 1;
+        }
+    }
+  
+    return $isDNA;
+
+} # isSequenceDNA() 
+		  
+# Validates sequence along with choice of algorithm - if sequence
+# contains chars that should not be in type of sequence (NT|AA) implied
+# by algorithm, return err msg.  An empty err msg means sequence is valid
+
+sub validateSequence($$)
+{
+    my $seq = shift;
+    my $algorithm = shift;
+    my $errMsg;
+  
+    ### Validation  rules from Eva ######
+    #
+    # User says it's protein (meaning blastp or tblastn are chosen)
+    #    If sequence (has J or O), or (has any of EFILPQXZ and also has U) ->
+    #       not valid, give error
+  
+    # User says it's nucleotide (meaning blastn, blastx or tblastx)
+    #    If sequence (has J or O), or (has any of EFILPQXZ and also has U) ->
+    #       not valid
+    #    If sequence has EFILPQXZ and does not have U
+    #       it is protein (not valid )
+
+    if ( $algorithm eq "blastp" || $algorithm eq "tblastn" ) 
+    {
+        if ( $seq =~ /[JjOo]/ ) 
+        {
+            $errMsg = "Invalid sequence for $algorithm";
+        } 
+        elsif ( ( $seq =~ /[EFILPQXZefilpqxz]/ && $seq =~ /[Uu]/ ) ) 
+        {
+            $errMsg = "Invalid sequence for $algorithm<br>";
+        }
+    
+    } 
+    elsif ( $algorithm eq "blastn" || 
+            $algorithm eq "blastx" || 
+            $algorithm eq "tblastx" ) 
+    {
+        if ( $seq =~ /[JjOo]/ || 
+             ( $seq =~ /[EFILPQXZefilpqxa]/ && $seq =~ /[Uu]/ ) ) 
+        {
+            $errMsg = "Invalid sequence for $algorithm<br>";
+        }
+    }
+
+    return $errMsg;
+
+} # validateSequence()
+
+######################################################################################
+
+sub myTairHeader()
+{
+    tair_header( "TAIR WU-BLAST 2.0 Result" );
+    print( "<table width=600    align =\"CENTER\"><TR><TD>\n" );
+}
+
+######################################################################################
+
+sub myTairFooter()
+{
+    print( "</TD></TR></TABLE>\n" );
+    tair_footer();
+}
+
+######################################################################################
+#
+#This function is not in use
+#
+
+sub checkLoad()
+{
+    read( FOO, $line, 80 );
+    close( FOO );
+    unlink( "/tmp/wublast/checkload.$$" );
+
+    if ( $line =~ /load average: \d+.\d/ ) 
+    {
+	$line =~ s/.*load average: //;
+	$line =~ s/,//g;
+	( $load ) = split( ' ', $line );
+    }
+    if ( $load > $MAXLOAD ) 
+    {
+	return 0;
+    } 
+    else 
+    {
+	return 1;
+    }
+
+} # checkLoad()
+
+##
+# print the linking page to the html form page.
+#
+
+sub printNewForm() 
+{
+    print( PrintHeader() );
+    myTairHeader();
+    print(
+          table( {-width=>600,-border=>0},
+                 Tr(
+                    td(
+                       font( {-face=>'verdana, arial, helvetica, sans-serif',
+                              -color=>'black',
+                              -size=>-1}, "\n",
+		
+                             h1( {-align=>'center'},
+                                 'Please use',
+                                 a( {-href=>"$BLASTPAGE"},
+                                    'this page'
+                                  ),
+                                 ' to search'
+                               ),
+                           )		
+                      )
+                   )
+               )
+         );
+
+    myTairFooter();
+
+    exit 0;
+
+}  # printNewForm()
+
+#################################################################################
+
+sub printEmailMessage() 
+{
+    print(
+          table( {-width=>600,
+                  -border=>0,
+                  -rules=>'none',
+                  -cellpadding=>0,
+                  -cellspacing=>0},
+                 Tr(
+                    td( {colspan=>2},
+                        h1( 'Your results will be sent to ', $email, '.', ),
+                      ),
+                   ),
+               )
+         );
+
+    myTairFooter();
+    exit 0;
+
+} # printEmailMessage() 
+
+############################################################################
+
+sub printSeq($$)
+{
+    my ( $label ) = $_[0];
+    my ( $field ) = $_[1];
+
+    if ( $field ne '' ) 
+    {
+        printf( SEQFH "%s\n", $label );
+        while ( length( $field ) > $COLUMN_WIDTH ) 
+        {
+            printf( SEQFH "%s\n", substr( $field, 0, $COLUMN_WIDTH ) );
+            $field = substr( $field, $COLUMN_WIDTH, length( $field ) );
+        }
+        printf( SEQFH "%s\n", $field );
+    }
+}
+
+#############################################################################
+
+sub printError() 
+{
+    print( PrintHeader() );
+    # Do standard HTTP stuff #
+    myTairHeader();
+    print(
+          'Your choice of Database (',
+          b(
+            $dbLabels{$database}
+           ),
+          ') does not match the ',
+          'choice of BLAST search program (',
+          b(
+            $program
+           ),
+          ').',
+          p,
+          'BLASTN, TBLASTN, & TBLASTX require a nucleotide ',
+          'sequence database. ',
+          'BLASTP and BLASTX require a protein sequence database. ',
+          p,
+          'Return to the form and adjust either the program ',
+          'or database selection. ' 
+         );
+
+    end_form;
+    myTairFooter();
+    exit;
+
+} # printError()
+
+############################################################################
+
+sub printQueryError() 
+{
+    print( PrintHeader() );
+    myTairHeader();
+    print( 
+          'The sequence type you submitted (',
+          b( $queryType ),
+          ') does not match with your choice of BLAST program (',
+          b( $program ),
+          ') or choice of database (',
+          b( $dbLabels{$database} ),
+          ').',
+          p,
+          'Return to the form to reselect your settings or sequence. ',
+          a( {-href=>'javaScript:{history.back()}'}, 'WUBLAST' ) 
+         );
+
+    end_form;
+    myTairFooter();
+    exit;
+
+} # printQueryError() 
+
+############################################################################
+
+sub printSError() 
+{
+    print( PrintHeader() );
+    myTairHeader();
+    print(
+          'The maximum sequence length for an S value less than 60 is ',
+          b( 100 ),
+          '.',
+          p,
+          'Return to the form to adjust either the S value ',
+          'or sequence.',
+          a( {-href=>'javaScript:{history.back()}'}, 'WUBLAST' ) 
+         );
+
+    end_form;
+    myTairFooter();
+    #unlink( "$TMPDIR/$SEQFILE" );
+    exit;
+
+} # printSError() 
+
+#############################################################################
+
+sub printXError() 
+{
+    print( PrintHeader() );
+    myTairHeader();
+    print(
+          'The maximum sequence length for TBLASTN and TBLASTX is 2,000 bp unless the Email option is used. ',
+          'This limit does not apply when searching the New & Recently Changed GenBank, CSHL/WASHU Preliminary Sequences, and the Arabidopsis Repeat Database.',
+
+          p,
+          'Return to the form and reduce the sequence length, select the Email option or ',
+          'choose another BLAST program.' 
+         );
+
+    myTairFooter();
+    exit;
+
+} # printXError()
+
+##############################################################################
+
+sub printMailError() 
+{
+    print( 
+          'You requested that the results be sent to your e-mail account.  However, your email address ',
+          'is missing, appears incomplete, or does not contain a valid hostname',
+          p,
+          'You entered this email address: ',
+          b(
+            $email
+           ),
+          p,
+          'Please return to the form and check that your email address ',
+          'is correct.' 
+         );
+
+    myTairFooter();
+    exit;
+}
+
+############################################################################
+
+sub HTMLerror($)
+{
+    print( PrintHeader() );
+    tair_header( "TAIR BLAST ERROR" );
+    print( "<table width=600    align =\"CENTER\"><TR><TD>\n" );
+
+    print( << "print_tag" );
+<FONT color=red> Error: </FONT> @_
+<p>
+<I><A HREF = javascript:history.back( -1 )>Back</a></I>
+print_tag
+		
+    print( "</TD></TR></TABLE>" );
+    tair_footer();
+
+    exit;
+}
+
+
+sub filterDBName () {
+  
+    my $line = shift;
+
+    if ( exists $dbLabels{$database} ) {
+	my $name = $dbLabels{$database};
+	$line =~ s/(Database:\s*)(.*$database)(\s*)/$1 $name$3/g;
+    }
+
+    return "$line";
+}

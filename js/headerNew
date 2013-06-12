@@ -1,0 +1,251 @@
+//
+// Helper function for quick search forms at the top of every page. Function
+// determines which search (tair db or google) was invoked, populates type
+// specific form fields for each search and submits form
+//
+function doSearch() {
+    var form = document.search_textbox_form;
+
+    // populate search method constants as literal values
+    var contains = "1";
+    var exact = "4";
+
+    // determine what datatype was selected in drop down menu
+    var selectedTypeIndex = form.sub_type.selectedIndex;
+    var selectedType = form.sub_type.options[ selectedTypeIndex ].value;
+
+    // if google search was selected, populate google form
+
+    if ( selectedType == "google" ) {
+        form = document.google_form;
+        form.q.value = document.search_textbox_form.name.value;
+    
+    //else check if it is plantcyc or aracyc website
+    } else if (selectedType == "aracyc") {
+        form = document.aracyc_form;
+        form.object.value = document.search_textbox_form.name.value;
+
+    // else populate form for searching TAIR db
+    } else if ( selectedType == "textpresso" ) {
+        form = document.textpresso_form;
+        form.searchstring.value = document.search_textbox_form.name.value;
+    } else {
+
+        // if selectedType is "any", set action to "search" to search
+        // all datatypes using "exact" match. Else set action to "detail"
+        // to search selected type using "contains"
+
+        if ( selectedType == "any" ) {
+            form.search_action.value = "search";
+            form.method.value = exact;
+        } else {
+            form.search_action.value = "detail";
+            form.method.value = contains;
+        }
+   }
+
+   form.submit();
+
+   return false;
+}
+
+
+document.write('<div id="nav">');
+    document.write('<ul id="search_cont">');
+        document.write('<li id="search">');
+
+			document.write('<form name="search_textbox_form" action="/servlets/Search" method="get" onSubmit="return doSearch()">');
+				document.write('<div>');
+				document.write('<input type="hidden" name="type" value="general"><input type="hidden" name="search_action"><input type="hidden" name="method"><input type="text" name="name" size="10" id="searchfield" />');
+
+ 
+
+				document.write('<select name="sub_type"><option value="aracyc">Metabolic Pathways</option><option value="textpresso">Textpresso full search</option><option value="any">Exact name search</option><option value="clone_end">EST or BAC end</option><option value="clone">Clone</option><option value="community">Person or lab</option><option value="ecotype">Ecotype</option><option value="gene" selected>Gene</option><option value="germplasm">Germplasm</option><option value="keyword">Keyword</option><option value="library">Library</option><option value="marker">Marker</option><option value="polyallele">Polymorphisms</option><option value="protein">Protein</option><option value="seed">Seed stock</option><option value="stock">DNA stock</option><option value="vector">Vector</option></select>' );
+				
+					document.write('<input type="submit" alt="search" value="Search" id="searchbutton" />');
+
+				document.write('</div>');
+		document.write('</form>');
+		document.write( '<!-- form to execute google search if selected above -->' );
+document.write( '<FORM name="google_form" method="GET" action="http://www.google.com/custom"><INPUT TYPE=hidden name=q size=10 maxlength=255 value=""><INPUT type=hidden name=cof VALUE="L:http://www.arabidopsis.org/images/logosmall.gif;AH:left;GL:0;S:http://www.arabidopsis.org;AWFID:56b9e4624af96ab2;"><input type=hidden name=domains value="arabidopsis.org"><input type=hidden name=sitesearch value="arabidopsis.org"></FORM>' );
+		document.write('<FORM name="aracyc_form" method="get" action="http://www.plantcyc.org:1555/ARA/substring-search"><INPUT TYPE=hidden name=type size=10 maxlength=255 value="NIL" /><INPUT TYPE=hidden name=object size=10 maxlength=255 value="" /></FORM>');
+        document.write('<form name="textpresso_form" method="get" action="http://www.textpresso.org/cgi-bin/arabidopsis/query"><input type="hidden" name="textstring" value=""></form>');
+
+        document.write('</li>');
+    document.write('</ul>');
+	document.write('<div id="logo">');
+		document.write('<a href="/index.jsp"><img src="/i/logo2.gif" width="87" height="61" alt="tair" /></a>');
+
+	document.write('</div>');
+		
+	document.write('<ul id="topnav">');
+
+		document.write('<li><a href="/index.jsp">Home</a></li>');
+		document.write('<li><a href="/help/index.jsp">Help</a></li>');
+		document.write('<li><a href="/contact/index.jsp">Contact</a></li>');
+		document.write('<li><a href="/about/index.jsp">About Us</a></li>');
+		document.write('<li><a href="/servlets/Community?action=login">Login/Register</a></li>');
+                document.write('<li><a href="/servlets/Community?action=logout">Logout</a></li>');
+
+
+		
+	document.write('</ul>');
+		document.write('<ul id="secondnav">');
+
+			document.write('<li><a href="/servlets/Search?type=general&action=new_search" class="firstlink">Search</a>');
+
+			document.write('<ul class="lesswidth"> <!--There is no id="selected" as above for the dropdown -->');
+				document.write('<li><a href="/servlets/Search?type=general&action=new_search">Search Overview</a></li>');
+				document.write('<li><a href="/servlets/Search?action=new_search&type=dna">DNA/Clones</a></li>');
+				document.write('<li><a href="/servlets/Search?action=new_search&type=ecotype">Ecotypes</a></li>');
+				document.write('<li><a href="/servlets/Search?action=new_search&type=gene">Genes</a></li>');
+				document.write('<li><a href="/tools/bulk/go/index.jsp">GO Annotations</a></li>');
+				document.write('<li><a href="/servlets/Search?action=new_search&amp;type=keyword">Keywords</a></li>');
+				document.write('<li><a href="/tools/bulk/locushistory/index.jsp">Locus History</a></li>');
+        			document.write('<li><a href="/servlets/Search?action=new_search&type=marker">Markers</a></li>');
+				document.write('<li><a href="/tools/bulk/microarray/index.jsp">Microarray Element</a></li>');
+				document.write('<li><a href="/servlets/Search?type=expr&search_action=new_search">Microarray Experiment</a></li>');
+        			document.write('<li><a href="/servlets/Search?action=new_search&type=expression">Microarray Expression</a></li>');
+				document.write('<li><a href="/servlets/Search?action=new_search&type=community">People/Labs</a></li>');
+				document.write('<li><a href="/servlets/Search?action=new_search&type=polyallele">Polymorphisms and Alleles</a></li>');
+				document.write('<li><a href="/servlets/Search?action=new_search&type=protein">Proteins</a></li>');
+        			document.write('<li><a href="/servlets/Search?action=new_search&type=protocol">Protocols</a></li>');
+				document.write('<li><a href="/servlets/Search?action=new_search&type=publication">Publication</a></li>');
+				document.write('<li><a href="/servlets/Search?action=new_search&type=germplasm">Seed/Germplasm</a></li>');
+				document.write('<li><a href="/tools/bulk/sequences/index.jsp">Sequences</a></li>');
+                document.write('<li><a href="http://www.textpresso.org/arabidopsis/">Textpresso Full Text</a></li>');
+			document.write('</ul>');
+
+			document.write('</li>');
+
+			document.write('<li><a href="/browse/index.jsp">Browse</a>');
+
+
+				document.write('<ul>');
+				document.write('<li><a href="/browse/index.jsp">Browse Overview</a></li>');
+				document.write('<li><a href="/servlets/Order?state=catalog">ABRC Catalog</a></li>');
+                                document.write('<li><a href="/portals/masc/projects.jsp">2010 Projects</a></li>');
+				document.write('<li><a href="/browse/Cereon/index.jsp">Monsanto SNP and Ler Collections</a></li>');
+				document.write('<li><a href="/browse/genefamily/index.jsp">Gene Families</a></li>');
+			    document.write('<li><a href="/servlets/processor?type=transposonfamily&update_action=browse">Transposon Families</a></li>');
+				document.write('<li><a href="/servlets/processor?type=genesymbol&amp;update_action=view_symbol&amp;symbol_type=structure">Gene Product Symbols</a></li>');
+                        	document.write('<li><a href="/portals/genAnnotation/functional_annotation/ontologies.jsp">Ontologies/Keywords</a></li>');
+				document.write('<li><a href="/browse/electricarab.jsp">Archived e-Journals</a></li>');
+                document.write('<li><a href="http://www.aspb.org/publications/arabidopsis/">The Arabidopsis Book (TAB)</a></li>');
+				document.write('</ul>');
+			document.write('</li>');
+ 
+	    		document.write('<li><a href="/tools/index.jsp">Tools</a>');
+
+				document.write('<ul>');
+				document.write('<li><a href="/tools/index.jsp">Tools Overview</a></li>');
+                document.write('<li><a href="/cgi-bin/gbrowse/arabidopsis/">GBrowse</a></li>');
+                document.write('<li><a href="/cgi-bin/gbrowse_syn/arabidopsis/">Synteny Viewer</a></li>');
+				document.write('<li><a href="http://tairvm09.tacc.utexas.edu/servlets/sv">Seqviewer</a></li>');
+				document.write('<li><a href="/servlets/mapper">Mapviewer</a></li>');
+				document.write('<li><a href="/biocyc/index.jsp">AraCyc Metabolic Pathways</a></li>');
+				document.write('<li><a href="/Blast/index.jsp">BLAST</a></li>');
+                                document.write('<li><a href="/wublast/index2.jsp">WU-BLAST</a></li>');
+				document.write('<li><a href="/cgi-bin/fasta/nph-TAIRfasta.pl">FASTA</a></li>');
+				document.write('<li><a href="/cgi-bin/patmatch/nph-patmatch.pl">Patmatch</a></li>');
+				document.write('<li><a href="/tools/bulk/motiffinder/index.jsp">Motif Analysis</a></li>');
+				document.write('<li><a href="/tools/bulk/microarray/analysis/index.jsp#vx">VxInsight</a></li>');
+                        	document.write('<li><a href="/tools/bulk/microarray/analysis/index.jsp#jtv">Java Tree View</a></li>');
+                                document.write('<li><a href="/tools/bulk/index.jsp">Bulk Data Retrieval</a></li>');
+        			document.write('<li><a href="/jsp/ChromosomeMap/tool.jsp">Chromosome Map Tool</a></li>');
+				document.write('<li><a href="/cgi-bin/patmatch/RestrictionMapper.pl">Restriction Analysis</a></li>');
+				document.write('<li><a href="/portals/nomenclature/symbol_main.jsp">Gene Symbol Registry</a></li>');
+                document.write('<li><a href="http://www.textpresso.org/arabidopsis/">Textpresso Full Text</a></li>');
+				document.write('</ul>');
+
+			document.write('</li>');
+
+			document.write('<li><a href="/abrc/index.jsp">Stocks</a>');
+				document.write('<ul>');
+				document.write('<li><a href="/abrc/index.jsp">Stocks Overview</a></li>');
+				document.write('<li><a href="http://www.biosci.ohio-state.edu/~plantbio/Facilities/abrc/abrchome.htm">ABRC Home</a></li>');
+                        	document.write('<li><a href="/servlets/Order?state=catalog">Browse ABRC Catalog</a></li>');
+				document.write('<li><a href="/abrc/major_stocks.jsp">Supplement to ABRC Catalog</a></li>');
+                        	document.write('<li><a href="/servlets/Search?action=new_search&amp;type=dna">Search DNA/Clone Stocks</a></li>');
+                        	document.write('<li><a href="/servlets/Search?action=new_search&amp;type=germplasm">Search Seed/Germplasm Stocks</a></li>');
+                                document.write('<li><a href="/servlets/Order?state=search&amp;mode=stock_number">ABRC Stock Order History</a></li>');
+				document.write('<li><a href="/abrc/fees.jsp">ABRC Fee Structure</a></li>');
+				document.write('<li><a href="/servlets/Order?state=checkLogin">Place ABRC Order</a></li>');
+                        	document.write('<li><a href="/servlets/Order?state=search&amp;mode=user">Search My ABRC Orders</a></li>');
+                document.write('<li><a href="/servlets/Search?type=invoice&search_action=userdetailform">Search ABRC Invoices</a></li>');
+                        	document.write('<li><a href="/abrc/payment.jsp">How to Make Payments to ABRC</a></li>');
+				document.write('<li><a href="/abrc/major_stocks.jsp">Major ABRC Stocks</a></li>');
+				document.write('<li><a href="/submit/abrc_submission.jsp">ABRC Stock Donation</a></li>');	
+				document.write('</ul>');
+			document.write('</li>');
+
+
+			document.write('<li><a href="/portals/index.jsp">Portals</a>');
+				document.write('<ul>');
+				document.write('<li><a href="/portals/index.jsp">Portals Overview</a></li>');
+				document.write('<li><a href="/portals/clones_DNA/index.jsp">Clones/DNA Resources</a></li>');
+				document.write('<li><a href="/portals/education/index.jsp">Education and Outreach</a></li>');
+				document.write('<li><a href="/portals/expression/index.jsp">Gene Expression Resources</a></li>');
+        			document.write('<li><a href="/portals/genAnnotation/index.jsp">Genome Annotation</a></li>');
+				document.write('<li><a href="/portals/mutants/index.jsp">Mutants/Mapping Resources</a></li>');
+				document.write('<li><a href="/portals/nomenclature/index.jsp">Nomenclature</a></li>');
+				document.write('<li><a href="/portals/proteome/index.jsp">Proteome Resources</a></li>');
+				document.write('<li><a href="/portals/masc/index.jsp">MASC/Functional Genomics</a></li>');
+				document.write('</ul>');
+			document.write('</li>');
+
+
+			document.write('<li><a href="ftp://ftp.arabidopsis.org/home/tair">Download</a>');
+
+				document.write('<ul>');
+				document.write('<li><a href="/download/index.jsp">Download Overview</a></li>');
+       			document.write('<li><a href="ftp://ftp.arabidopsis.org/home/tair/ABRC/">ABRC Documents</a></li>');
+       			document.write('<li><a href="ftp://ftp.arabidopsis.org/home/tair/Genes/">Genes</a></li>');
+				document.write('<li><a href="ftp://ftp.arabidopsis.org/home/tair/Ontologies/">GO and PO Annotations</a></li>');
+				document.write('<li><a href="ftp://ftp.arabidopsis.org/home/tair/Maps">Maps</a></li>');
+				document.write('<li><a href="ftp://ftp.arabidopsis.org/home/tair/Pathways/">Metabolic Pathways</a></li>');
+				document.write('<li><a href="ftp://ftp.arabidopsis.org/Polymorphisms">Polymorphisms</a></li>');
+                document.write('<li><a href="ftp://ftp.arabidopsis.org/home/tair/Proteins/">Proteins Download</a></li>');
+				document.write('<li><a href="ftp://ftp.arabidopsis.org/home/tair/Protocols/">Protocols</a></li>');
+        			document.write('<li><a href="ftp://ftp.arabidopsis.org/home/tair/Microarrays/">Microarry Data Download</a></\li>');
+				document.write('<li><a href="ftp://ftp.arabidopsis.org/home/tair/Sequences/">Sequences Download</a></li>');
+				document.write('<li><a href="ftp://ftp.arabidopsis.org/home/tair/Software/">Software</a></li>');
+				document.write('<li><a href="ftp://ftp.arabidopsis.org/home/tair/User_Requests/">User Requests</a></li>');
+                document.write('<li><a href="/tools/bulk/index.jsp">Bulk Data Retrieval</a></li>');
+				document.write('</ul>');
+			document.write('</li>');
+
+
+			document.write('<li><a href="/submit/index.jsp">Submit</a>');
+				document.write('<ul>');
+				document.write('<li><a href="/submit/index.jsp">Submit Overview</a></li>');
+                document.write('<li><a href="/submit/abrc_submission.jsp">ABRC Stock Donation</a></li>');
+                document.write('<li><a href="/submit/ExternalLinkSubmission.jsp">External Links</a></li>');
+                document.write('<li><a href="/portals/nomenclature/symbol_main.jsp">Gene Class Symbol Registration</a></li>');
+                document.write('<li><a href="/submit/genefamily_submission.jsp">Gene Family Data</a></li>');
+                document.write('<li><a href="/submit/functional_annotation.submission.jsp">Gene Functional Annotations</a></li>');
+                document.write('<li><a href="/submit/gene_annotation.submission.jsp">Gene Structure Annotations</a></li>');
+                document.write('<li><a href="/submit/locus_identifier_request.jsp">Locus Identifier Request</a></li>');
+                document.write('<li><a href="/submit/marker_submission.jsp">Marker and Polymorphism Data</a></li>');
+                document.write('<li><a href="/submit/pathway_submission.jsp"> Metabolic Pathway Data</a></li>');
+                document.write('<li><a href="/submit/phenotype_submission.jsp"> Phenotypes</a></li>');
+                document.write('<li><a href="/submit/protocol_submission.jsp">Protocols</a></li>');
+                document.write('<li><a href="/submit/submit_2010.jsp">2010 Functional Genomics Gene List</a></li>');
+				
+                document.write('</ul>');
+
+			document.write('</li>');
+
+			document.write('<li><a href="/news/index.jsp" class="lastlink">News</a>');
+				document.write('<ul class="short">');
+				document.write('<li><a href="/news/index.jsp">News Overview</a></li>');
+				document.write('<li><a href="/news/news.jsp">News</a></li>');
+				document.write('<li><a href="/news/newsgroup.jsp">Newsgroup</a></li>');
+				document.write('<li><a href="/news/events.jsp">Events</a></li>');
+				document.write('<li><a href="/news/jobs.jsp">Job Postings</a></li>');
+				document.write('<li><a href="/help/faq.jsp#jobs">How to Post a Job</a></li>');
+				document.write('</ul>');
+			document.write('</li>');
+
+		document.write('</ul>');
+	document.write('</div>');

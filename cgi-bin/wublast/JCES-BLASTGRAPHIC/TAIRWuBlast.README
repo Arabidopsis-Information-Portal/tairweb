@@ -1,0 +1,136 @@
+The WuBlast scripts and JCES-BLASTGRAPHIC libraries were  modified by Bengt Anell, 
+TAIR January 2001. bengt@acoma.stanford.edu
+
+The script nph-TAIRblast uses a cgi-form to supply input to the WuBlast program. 
+All options are supplied as command line arguments. The result that is produced by 
+BLAST is parsed by blast2html.pl to create html links. Map.pl uses the same result 
+to produce a clickable gif image (JavaScript). CGI.pm and GD.pm are required.
+If no parameters are passed to the script it shows the input form. If it recieves 
+parameters it parses the options and calls the appropriate programs.
+
+The script does: check for correct algorithm choices with databases.
+		 check the type of sequence submitted
+		 support email reply option 
+		 support file upload
+		 support multi fasta file format (without graphics)
+
+The script does not: check load on server or queue processes
+		 supply email return in html format
+		 delete tmp files (my setup uses a cron job for deleting)
+		 
+
+WuBlast/
+
+/var/www/cgi-bin/wublast/nph-TAIRblast
+/var/www/cgi-bin/wublast/blast2html.pl
+/var/www/cgi-bin/wublast/xdformat
+
+JCES-BLASTGRAPHIC/
+
+/var/www/cgi-bin/wublast/JCES-BLASTGRAPHIC/map.pl  
+/var/www/cgi-bin/wublast/JCES-BLASTGRAPHIC/originalmap.pl
+/var/www/cgi-bin/wublast/JCES-BLASTGRAPHIC/blast_web.csh  
+/var/www/cgi-bin/wublast/JCES-BLASTGRAPHIC/MyBlast/  
+/var/www/cgi-bin/wublast/JCES-BLASTGRAPHIC/Bio/  
+/var/www/cgi-bin/wublast/JCES-BLASTGRAPHIC/lib/
+/var/www/cgi-bin/wublast/JCES-BLASTGRAPHIC/Region/  
+/var/www/cgi-bin/wublast/JCES-BLASTGRAPHIC/Set/  
+/var/www/html/images/orfmap/ 'for gif images produced by map.pl'
+
+Datasets/
+
+/var/www/cgi-bin/wublast/datasets/          'All blast datasets'
+/var/www/cgi-bin/wublast/datasets/cleaners/ 'scripts for cleaning fasta files'
+
+Temporary directory/
+
+/var/www/html/tmp/wublast ' for temp files '
+
+1.	nph-TAIRblast
+	**************
+
+	Location : /var/www/cgi-bin/wublast/nph-TAIRblast
+	URL :      http://tesuque.stanford.edu/cgi-bin/wublast/nph-TAIRblast/
+	Input :    sequence data, options from cgi
+	Output :   /var/www/html/tmp/wublast/blastseq.tmp.$$
+                   /var/www/html/tmp/wublast/blastout.tmp.$$
+	Desc :	   BLAST input form, calls BLAST, map.pl, blast2html.pl
+		   creates sequence file to use as input for blast,
+		   Blast creates alignment file blastout.tmp.$$
+
+2.	map.pl  
+	*************
+
+	Location : /var/www/cgi-bin/wublast/JCES-BLASTGRAPHIC/map.pl  
+	Input :    blastseq.tmp.$$ from nph-TAIRblast
+	Output :   http://tesuque.stanford.edu/images/orfmap/$$.50.gif
+		   HTML in browser
+	Desc :     Produces GIF image from alignment file, writes HTML (JavaScript)
+                   directly to browser.
+
+
+3.	blast2html.pl
+	***************
+
+	Location : /var/www/cgi-bin/wublast/blast2html.pl
+	Input :    blastout.tmp.$$ from nph-TAIRblast
+	Output :   /var/www/html/tmp/wublast/HTMLFILE
+	Desc :     Adds links and anchors to BLAST output file
+
+
+4.      xdformat
+        ********
+
+	Location : /var/www/cgi-bin/wublast/xdformat
+	Input :    multi fasta files  example: AGI
+	Output :   three files ex: AGI.xnd, AGI.xns, AGI.xnt
+        Usage :    ./xdformat -n AGI ( -p for protein seq )
+
+
+5. 	cleaners
+	********
+
+	Location : /var/www/cgi-bin/wublast/datasets/cleaners
+
+	ATH1.cleaner.pl
+	Desc :     #To use: perl ATH1.cleaner.pl  < input.file > output.file
+                   #To check: cat output.file |grep \> > headercheck.file
+
+                   # Changes this ...
+                   #>67250.m00011#T6D9_110 chr.3 nonphototropic hypocotyl 1   ...
+
+                   # To this ...
+		   #>TIGR|67250.m00011|T6D9_110 chr.3 nonphototropic hypoco   ...
+
+	AGI.nonredundant.cleaner.pl
+	Desc :	# Changes this ...
+		#>gi|2564046|dbj|AB007646.1|AB007646 Arabidopsis thaliana ge
+		#>gi|3319339|gb|AF077407.1|F9D12 Arabidopsis thaliana BAC F9D12	
+		#>gi|9755794|emb|AL391143.1|ATT20K14 Arabidopsis thaliana 
+		#>T42650  GenBank numbers
+
+		# To this ...
+		#>GB|accession number|etc...
+
+	TIGR.cleaner.pl
+	Desc :	# Changes this....
+		#>TC100000 serine protease-like protein   --> TIGR
+		#>TC100214 or >TC97503                    --> TIGR
+		#>ET27324 M4                              --> TIGR
+		#>NP042242|AC004255.1|AAC13892.1 T1F9.2   --> GB
+		#>NP005222 [GB:Y18317] S7 ribosomal pro   --> GB
+		#>T42650                                  --> GB
+
+		# To this...
+		#>TIGR|TC100000|Arabidopsis serine protease-like protein^^c
+		#>TIGR|TC20424|Soy 
+		#>GB|AF052513|NP005264| ferritin 1
+		#>GB|AI939160
+
+	ArabidopsisN.cleaner.pl
+	Desc : 	# Changes this ...
+		#>GSDB:S:11439|L13922|ATHAXR1122|Arabidopsis thaliana
+
+		# To this ...
+		#>GB|L13922|11439|ATHAXR1122|Arabidopsis thaliana 
+

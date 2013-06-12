@@ -1,0 +1,418 @@
+#!/bin/env perl
+# cgi script that returns gene descriptions for loci or gene models.
+#
+# based on lukas muller 's getgo.pl and iris xu's microarray_probe.pl
+#
+# Cynthia Lee March 13, 2007
+
+use strict;
+use CGI;
+
+require "../../format_tairNew.pl";
+use lib "../../afgc";
+use Data::Dumper;
+use CloneIdFinder;
+use File::stat;
+use Time::localtime;
+#use Set::Scalar;
+
+my $data_dir = "$ENV{'DOCUMENT_ROOT'}/../data/genes/";
+my $cgi = CGI -> new ();
+my $search_for_string = $cgi -> param("search_for");
+my $output_type = $cgi -> param("output_type");
+my $search_from = $cgi -> param("search_against");
+
+# are we uploading a file?
+my $uploadStr="";
+my $fh = $cgi->upload("file");
+if ($fh) {
+    while (<$fh>) {
+        $uploadStr .= $_;
+    }
+    $search_for_string = $uploadStr;
+}
+
+$search_for_string = uc($search_for_string);     # convert to uppercase
+$search_for_string =~ s/[\;\,\r\n\t]/\t/g;       # convert all seperators to tabs
+$search_for_string =~ tr/\t/\t/s;      # squash multiple tabs into one
+
+my @search_for = split /\t/, $search_for_string;
+
+# check for errors -- was anything entered at all?
+#
+if (!@search_for) { output_error("You did not enter any loci or gene model information", "Please enter loci or gene models in the textfield or upload a file with those information"); exit(); }
+# preprocess file, read file into hash or array
+
+my @exp_file;
+
+my @results;
+
+my %has_hit_flag;
+my $flag_ref =  \%has_hit_flag;
+
+$search_from = lc($search_from);     # convert to lower case
+
+my %searchFromToFile = ('rep_gene'=>"rep_gene", 
+                        'both'=>"both",
+			            'genemodel' => "gene");
+
+my $locus_file_name = $data_dir."Locus_GeneModelDescriptions.txt"; 
+my $gene_file_name = $data_dir."Gene_GeneModelDescriptions.txt";
+
+my $datetime_string = ctime(stat($locus_file_name)->mtime);
+
+if ($search_from eq 'locus'){
+    my %genes_file = read_descriptions_into_hash($locus_file_name, "locus");
+    @results = get_hits($search_for_string, $flag_ref, %genes_file);
+}elsif ($search_from eq 'rep_gene'){
+    my %locus_genes_file = read_descriptions_into_hash($locus_file_name, "rep_locus"); 
+    my %gene_genes_file = read_descriptions_into_hash($gene_file_name, "rep_gene");
+    my @locus_results = get_hits($search_for_string, $flag_ref, %locus_genes_file); 
+    my @gene_results = get_hits($search_for_string, $flag_ref, %gene_genes_file);
+    @results = getunique(\@locus_results, \@gene_results);
+}elsif ($search_from eq 'genemodel'){
+    my %genes_file = read_descriptions_into_hash($gene_file_name, "genemodel");
+    @results = get_hits($search_for_string, $flag_ref, %genes_file);
+}elsif ($search_from eq 'both') {
+    my %locus_genes_file = read_descriptions_into_hash($locus_file_name, "locus"); 
+    my %gene_genes_file = read_descriptions_into_hash($gene_file_name, "genemodel");
+    $search_for_string = add_search_for($search_for_string, %gene_genes_file);   
+    %gene_genes_file = read_descriptions_into_hash($gene_file_name, "gene");
+    my @locus_results = get_hits($search_for_string, $flag_ref, %locus_genes_file); 
+    my @gene_results = get_hits($search_for_string, $flag_ref, %gene_genes_file);
+    @results = getunique(\@locus_results, \@gene_results);
+}
+
+# resort this array of hashes by locus_id
+my @sorted_array;
+my %temphash;
+for (my $i=0; $i<@results; $i++){
+    my %hitref = %{ $results[$i] };
+    foreach my $key (keys %hitref) {
+        my @array = @{ $hitref{$key} };
+        #stored by {locus_id}{gene_name}
+        $temphash{ $array[4] }{$array[1]} = \@array;
+    }
+}
+
+#sort the results
+foreach my $key(sort (keys(%temphash)) ){
+    my %innerhash = %{ $temphash{$key} };
+    push @sorted_array, \%innerhash;
+}
+@results = @sorted_array;
+
+# check if there are more than 1000 entries in the hash -- we revert to text output in any case.
+#
+if ( scalar(@results) >1000 ) { $output_type = "text"; }
+
+if ( $output_type eq "text" ) { 
+   output_text( ); 
+} else {
+   output_html( );
+}
+
+sub output_html {
+    print "Content-type: text/html\n\n";
+    tair_header("Gene Model Search Results");
+    print "<TABLE border=0 width=725>\n";
+    print "<TR><TD><center><span class=mainheader>Gene Model Search Results</span></center><br /><br />\n";
+    print "<TABLE border=1 width=725>\n";
+    # print table header
+    my $headerString = makeResultHeader( );
+    print $headerString;
+
+    # print search result
+    for (my $i=0; $i<@results; $i++){
+        my %hitref = %{ $results[$i] };
+        printOneEntry( %hitref);
+    }
+    print "</TABLE>\n";
+    print "<br /><TR><TD><center>Last updated on : $datetime_string</center><br />";
+    print "<BR />";
+    # print a little summary
+
+    if( scalar(@search_for) > scalar (keys %has_hit_flag)){
+        print "<TR><TD align=\"center\"><B>Your query for the following terms resulted in no hits:&nbsp; ";
+        my @non_found;
+        foreach my $key(@search_for){
+            if ($has_hit_flag{$key} eq "yes"){}
+            else{
+               push @non_found, $key ;
+            }
+        }
+        print join ("; &nbsp;    " , @non_found);
+        print "</B></TD></TR>";
+    }
+    print "</TABLE>\n";
+    tair_footer();
+
+}
+
+sub  makeResultHeader {
+    
+    my $headerRow;
+    if ($search_from eq 'rep_gene'){
+        $headerRow = "<TR><TD align=\"center\">Locus Identifier</TD>".
+                    "<TD align=\"center\">Representative Gene Model Name</TD>".
+                    "<TD align=\"center\">Gene Description</TD>".
+          	        "<TD align=\"center\">Gene Model Type</TD>".
+                    "<TD align=\"center\">Primary Gene Symbol</TD>".
+                    "<TD align=\"center\">All Gene Symbols</TD>";
+    }else{
+        $headerRow = "<TR><TD align=\"center\">Locus Identifier</TD>".
+                    "<TD align=\"center\">Gene Model Name</TD>".
+                    "<TD align=\"center\">Gene Description</TD>".
+          	        "<TD align=\"center\">Gene Model Type</TD>".
+                    "<TD align=\"center\">Primary Gene Symbol</TD>".
+                    "<TD align=\"center\">All Gene Symbols</TD>";
+    }
+    return  $headerRow; 
+}
+
+# print one search result entry as one table row
+sub printOneEntry {
+    my (%hitref) = @_;   
+    foreach my $key (keys %hitref) {
+        print "<TR>";
+        my @array = @{ $hitref{$key} };
+        
+        # we it is -1 because we dont want to print the locus_id
+        for (my $i=0; $i<@array-1; $i++){
+            if ($i == 0 && !($array[$i] eq "") ) {
+                printLocusCell($array[$i]);
+            }elsif (! ($array[$i] eq "")){
+                if ($i == (@array-2) ){
+                    printCell_symbol($array[$i]);
+                }else{
+                    printCell($array[$i]);
+                }
+            }else{
+                print "<TD>&nbsp;</TD>";
+            }
+        }
+        print "</TR>";
+    }
+}
+
+
+sub printLocusCell{
+    my ($cell, %alignment ) = @_;
+    my $align ="center" ;
+    if ( exists $alignment{"align"} ) { $align =$alignment{"align"}; }
+    if ($cell){ print "<TD align=\"$align\"><a href='/servlets/TairObject?name=$cell&type=locus'>$cell</a></TD>"; } 
+    else{ print "<TD align=\"center\">&nbsp;</TD>"; }  
+}
+
+sub printCell_symbol {
+    my ($cell, %alignment ) = @_;
+    my $align ="center" ;
+    if ( exists $alignment{"align"} ) { $align =$alignment{"align"}; }
+    if ($cell){ 
+        $cell =~ s/;/<br><br>/g;
+        print "<TD align=\"$align\">$cell</TD>"; 
+    } 
+    else{ print "<TD align=\"center\">&nbsp;</TD>"; }  
+}
+
+sub printCell {
+    my ($cell, %alignment ) = @_;
+    my $align ="center" ;
+    if ( exists $alignment{"align"} ) { $align =$alignment{"align"}; }
+    if ($cell){ 
+        print "<TD align=\"$align\">$cell</TD>"; 
+    } 
+    else{ print "<TD align=\"center\">&nbsp;</TD>"; }  
+}
+
+sub output_text {
+    print "Content-type: text/plain\n\n";
+    
+    # print header
+    print "Locus Identifier\tGene Model Name\tGene Model Description\tGene Model Type\tPrimary Gene Symbol\tAll Gene Symbols";
+    print "\n";
+
+    # print search result
+    # it is results -1 because we dont want to print the locus_id
+    for (my $i=0; $i<@results; $i++){                                                                                                                                                                         
+        my %hitref = %{ $results[$i] };                                                                                                                                                                                                     
+        foreach my $key (keys %hitref) { 
+            my @array = @{ $hitref{$key} };
+            for (my $i=0; $i<@array-1; $i++){ 
+                if (! ($array[$i] eq "")){                                                              
+                    print "$array[$i]\t";                                                                                                                                                                                   
+                }else{
+                    print "\t";
+                }
+            }
+            print "\n";
+        }
+    }   
+     
+    # list of not found items
+    if( scalar(@search_for) > scalar (keys %has_hit_flag)){
+        print "The query for the following terms resulted in no hits: ";
+    }
+    foreach my $key(@search_for){
+        if ($has_hit_flag{$key} eq "yes"){}
+        else{
+            print "$key  ";
+        }
+    }
+    print "\n";
+}
+
+sub output_error {
+    my $title = shift;
+    my $message = shift;
+    print "Content-type: text/html\n\n";
+    tair_header("Gene Descriptions Search Error");
+    print "<TABLE border=0 width=602>\n";
+    print "<TR><TD><span class=header>Error: $title</span><br /><br />\n";
+    print "$message<BR /><BR /><BR /><BR />\n";
+    print "<a href=\"/tools/bulk/genes/\">Gene Descriptions Search Page</a><BR /><BR /><BR />";
+    print "</TABLE>\n";
+    tair_footer();
+}
+
+#search the file-hash for the input loci 
+sub get_hits {
+    my ($search_for_string, $flags, %source) = @_; 
+    my @search_for = split /\t/, $search_for_string; 
+    my @hits;
+    foreach my $search_for (@search_for){
+       my $search_for_this  = trim( $search_for );
+       if ($search_for_this ne ""){
+            if (exists($source{uc $search_for_this})){
+                $flag_ref->{$search_for}= "yes";
+                my %found_entry = %{ $source{$search_for_this} };
+                push @hits, \%found_entry;
+            }
+        } 
+    }
+    return @hits;
+}
+
+# add_search_for. take all the associated loci of a gene and add that to search_for
+sub add_search_for {
+    my ($search_for_string, %source) = @_;
+    my @search_for = split /\t/, $search_for_string;  
+    foreach my $search_for(@search_for){
+        my $search_for_this  = trim( $search_for );
+        if ($search_for_this ne ""){
+            if (exists($source{uc $search_for_this})){
+                my %found_entry = %{ $source{$search_for_this} };
+                foreach my $key( keys %found_entry){
+                    $search_for_string = $search_for_string . "\t$key";
+                }
+            }
+        }
+    }
+    return $search_for_string;
+}
+
+## A more robust version of dumper.  Possibly slower.
+sub getunique {
+    my ($locus_ref, $genes_ref) = @_;
+    my @results;
+    my %combohash;
+    my @locus = @{ $locus_ref };
+    my @genes = @{ $genes_ref };
+    
+    for (my $i=0; $i<@locus; $i++){
+        my %locushash = %{ $locus[$i] };
+        foreach my $key( keys %locushash){
+            
+            #special variable defined for entries that have loci but no genes
+            my $nullgenes = 0;
+            my @array = @{ $locushash{$key} };
+            if ($array[1] eq ""){
+                $combohash{ $array[0] }{'__NULL__' . $nullgenes} = \@array;
+                $nullgenes++;
+            }else{
+                $combohash{ $array[0] }{ $array[1] } = \@array;
+            }
+        }
+    }
+    for (my $i=0; $i<@genes; $i++){
+        my %genehash = %{ $genes[$i] };
+        foreach my $key( keys %genehash){
+            #epecial variable defined for entries that have genes associated to no loci
+            my $nullloci = 0;
+            my @array = @{ $genehash{$key} };
+            if ($array[0] eq ""){                                                                                                                      
+                $combohash{ '__NULL__' . $nullloci }{ $array[1]} = \@array;                                                                                                      
+                $nullloci++;                                                                                                                                                        
+            }else{  
+            
+                # overwrite anyting that may have been declared already in locus so there's only one entry
+                $combohash{ $array[0] }{ $array[1] } = \@array;  
+            }
+        }
+    }
+    
+    foreach my $key ( keys %combohash ) { 
+        my %indihash = %{ $combohash{$key} };
+        push @results, \%indihash;
+    }
+    return @results;
+}
+
+sub trim {
+    my $string = shift;
+    for ($string) {
+        s/^\s+//;
+        s/\s+$//;
+    }
+    return $string;
+}
+
+
+sub read_descriptions_into_hash {
+    my ($file, $id)=@_;
+    my %hash;
+    open (F, "<$file") || die "Can't find file $file";
+    my @columns = qw( 
+                locus_name
+                rep_gene_name
+                gene_name
+                gene_model_type
+                description
+                locus_id 
+                primary_symbol
+                affiliate_symbol);
+                
+    while (my $line = <F>) {
+        chomp $line;
+        my %entry;
+        @entry{@columns} = split(/\t/, $line);
+        
+        my @array;
+        
+        # only store the representative gene models
+        if ($id eq "rep_locus" ) {
+            if ($entry{rep_gene_name} ne ""){
+                @array = ( $entry{locus_name}, $entry{gene_name}, $entry{description}, $entry{gene_model_type}, $entry{locus_id}, $entry{primary_symbol}, $entry{affiliate_symbol} );
+            }
+        }elsif ($id eq "locus" || $id eq "gene" || $id eq "genemodel") {
+            @array = ( $entry{locus_name}, $entry{gene_name}, $entry{description}, $entry{gene_model_type}, $entry{locus_id}, $entry{primary_symbol}, $entry{affiliate_symbol} );
+        }elsif ($id eq "rep_gene") {
+            
+            # needs to have a representative gene model name to be included
+            if ($entry{rep_gene_name} ne ""){
+                @array = ($entry{locus_name}, $entry{rep_gene_name}, $entry{description}, $entry{gene_model_type}, $entry{locus_id}, $entry{primary_symbol}, $entry{affiliate_symbol} );
+            }
+        }
+
+        if ($id eq "locus" || $id eq "rep_locus"){
+            $hash{ uc($entry{locus_name}) }{ uc($entry{gene_name}) } = \@array; 
+        }elsif ($id eq "gene"){
+            $hash{ uc($entry{locus_name}) }{ uc($entry{gene_name}) } = \@array; 
+        }elsif ($id eq "rep_gene" || $id eq "genemodel"){
+            $hash{ uc($entry{gene_name}) }{ uc($entry{locus_name}) } = \@array;
+        }
+    }
+    
+    return %hash;
+}
+

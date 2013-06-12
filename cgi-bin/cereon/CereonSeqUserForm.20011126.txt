@@ -1,0 +1,56 @@
+Exhibit G
+
+[FORM OF AGREEMENT]
+
+TERMS OF ACCESS AGREEMENT TO CEREONARABIDOPSIS LANDSBERG SEQUENCE
+
+When you click on the 'I Agree' button, you will be required to fill out your and your PI's contact information.  We will notify you, your PI, and Cereon of the agreement by e-mail at which time you may download a paper copy for your file.  You are responsible for obtaining your institution's approval prior to accepting this agreement.
+
+TERMS OF ACCESS AGREEMENT TO CEREON ARABIDOPSIS LANDSBERG SEQUENCE
+
+1.	ACKNOWLEDGMENT AND ACCEPTANCE OF TERMS
+Access to the Cereon Arabidopsis Landsberg Sequence contained in the files accessible from this Website (the "Cereon Information") is provided to you under the terms and conditions of this Terms of Access Agreement ("Agreement") and any operating rules or policies that may be published by Cereon Genomics (together with its parent, Monsanto Company and their respective affiliates and subsidiaries, "Cereon"). This Agreement comprises the entire agreement between you and Cereon regarding access to the Cereon Information and supersedes all prior agreements between the parties regarding the subject matter contained herein.  BY COMPLETING THE REGISTRATION PROCESS AND CLICKING THE "I AGREE" BUTTON, YOU ARE INDICATING YOUR AGREEMENT TO BE BOUND BY ALL OF THE TERMS AND CONDITIONS OF THIS AGREEMENT.
+
+2.	ACCESS LIMITED TO NON-PROFIT OR EDUCATIONAL INSTITUTIONS
+Access to the Cereon Information is limited to 
+(i)	non-profit institutions, and 
+(ii) universities and colleges (collectively "Institution").  
+By accepting this Agreement, you represent that you are (i) an Institution or (ii) an employee, officer or agent of an Institution acting in your capacity as such employee, officer or agent.
+
+3.	LICENSE GRANT AND LIMITATIONS
+Subject to the limitations set forth below, Cereon grants to you a personal, royalty free, non-transferable (except to the extent necessary to comply with 37 CFR 401.14), non-exclusive license to:
+  
+ * Download one copy of the Cereon Information to a personal computer owned and/or operated by you or to a personal, non-shared location on a shared server; and
+
+   * Access and use the Cereon Information from any terminal, wireless device, workstation and computer which is a part of your network.
+
+YOU ARE LICENSED TO USE THE CEREON INFORMATION FOR NONCOMMERCIAL RESEARCH PURPOSES (WHICH SHALL INCLUDE FEDERALLY FUNDED RESEARCH THAT IS GOVERNED BY 37 CFR 401.14) ONLY. YOU AGREE NOT TO MAKE ANY COMMERCIAL USE OF THE CEREON INFORMATION WITHOUT THE EXPRESS WRITTEN CONSENT OF CEREON. See Footnote  EXCEPT AS PROVIDED FOR HEREIN, YOU AGREE THAT THE CEREON INFORMATION WILL NOT BE USED IN RESEARCH THAT IS SUBJECT TO CONSULTING, LICENSING OR OTHER CONTRACTUAL RIGHTS OF OR OBLIGATIONS TO ANY THIRD PARTY, OTHER THAN AN INSTITUTION WHICH IS BOUND BY A TERMS OF ACCESS AGREEMENT WITH CEREON. Except as expressly set forth in this Agreement, you agree not to otherwise use, copy, disseminate or permit access to the Cereon Information, or any portion thereof, in any form or medium.
+
+4.	NO TRANSFER OR SUBLICENSE
+This license is personal and you agree not to sell, transfer, assign, sublicense or otherwise transfer this Agreement or the Cereon Information, or any copy or portion thereof, to any other person, except as may be required by law or court order.
+
+5.	OWNERSHIP
+The Cereon Information contains proprietary information belonging to Cereon and certain other third parties. As licensee, you own the media on which the Cereon Information is recorded, but not the Cereon Information itself.  Cereon retains all title and ownership to the Cereon Information recorded on the media and all copyright and other intellectual property rights therein.  This license is not a sale of the Cereon Information or any copy. 
+
+6.	PUBLICATION; CONFIDENTIAL INFORMATION
+You are free to publish, in any form, any research results from use of the Cereon Information proided that such a publication will not result in publication of all or a substantial portion of the Cereon Information.    Published sequence information should be limited to disclosure of no more than 250 kilobases per publication.  If you desire to publish more than 250 kilobases of the Cereon Information in a single publication, please e-mail your request to athal@cereon.com.  Any such publication shall make reference to Cereon Genomics.  You agree to maintain the Cereon Information in confidence under the terms of this limited license and not to disclose the Cereon Information to any other person except for that portion that is part of any such publication.
+
+7.	INFORMATION
+That while you are under no obligation to do so, you understand that Cereon is very interested in developments regarding the Cereon Information and in hearing about any new information or discoveries resulting from the use of the Cereon Information. Please send an e-mail to Athal@cereon.com regarding non-confidential information any such information or discoveries. Please note that we assume no responsibility for reviewing unsolicited ideas for our business. Also, please remember that you are responsible for whatever material you submit, and that you, and not Cereon, have full responsibility for the message, including its reliability, originality and copyright. Please do not reveal trade secrets or other confidential information in your messages.
+
+
+8.	PROPRIETARY NOTICES
+You agree not to alter, remove, or obscure any copyright notices or other proprietary notices on and in the Cereon Information. You agree to include on and in any copies of the Cereon Information the same proprietary notices and other legends contained on and in the Cereon Information as furnished to you by Cereon.
+
+9.	GOVERNING LAW
+This Agreement shall be construed in accordance with and governed by the laws of the State of Missouri, U.S.A., excluding its choice of law rules.
+
+10.	LIMITATION OF LIABILITY
+	You understand that Cereon and Monsanto Company provide no guarantees whatsoever with respect to the accuracy of the Cereon Information and that you and your Institution will not assert any claims against Cereon or Monsanto Company which arise as a result of your use of the Cereon Information. For other important terms, including further limitations on liability, click {here}.
+
+Footnote  This restriction should be interpreted that the Cereon information should not be used in a commercial setting (i.e., selling parts of the database for profit, for instance.)  It is not a restriction on any results gained from the use of the Cereon Information (for instance, if research using the Cereon information results in discovering a gene, the restriction does not apply to the gene).
+
+I Agree
+
+
+
